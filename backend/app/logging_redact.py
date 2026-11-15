@@ -7,7 +7,11 @@ creation, so it also covers third-party and child loggers and every handler.
 import logging
 import re
 
-_KEY_SHAPED = re.compile(r"sk-[A-Za-z0-9_\-]{8,}|AIza[0-9A-Za-z_\-]{10,}")
+# sk-… (OpenAI, Anthropic), AIza… (Google), gsk_… (Groq), nvapi-… (NVIDIA). Keys of other
+# OpenAI-compatible providers have no known shape: they are protected by never being logged.
+_KEY_SHAPED = re.compile(
+    r"sk-[A-Za-z0-9_\-]{8,}|AIza[0-9A-Za-z_\-]{10,}|gsk_[A-Za-z0-9]{16,}|nvapi-[A-Za-z0-9_\-]{16,}"
+)
 REDACTED = "[redacted]"
 _installed = False
 

@@ -50,6 +50,8 @@ Useful switches in `.env`:
 |---|---|
 | `COUNCIL_FAKE=1` | The council uses canned text for all three providers: no keys, no network, no cost. |
 | `COUNCIL_MODEL_ANTHROPIC` / `_OPENAI` / `_GOOGLE` | Model per live provider (defaults `claude-sonnet-5-5`, `gpt-6.1-terra`, `gemini-3.8-flash`). Each must have a price in `backend/app/council/prices.py` or in `COUNCIL_PRICES`, or the run refuses to start. |
+| `COUNCIL_ALLOW_LOCAL_PROVIDERS=1` | Lets OpenAI-compatible seats use private / loopback / link-local addresses and hosts that are not presets (Ollama on this machine, a LAN server). **Off by default. Must stay off in any hosted or multi-user deployment** (see "OpenAI-compatible seats"). |
+| `COUNCIL_PROVIDER_PRESETS` | JSON `{"id": {"label": "...", "base_url": "https://.../v1", "needs_key": true}}`: extra OpenAI-compatible presets. Their hosts are allowed like Groq's. |
 | `COUNCIL_PRICES` | JSON `{"model-id": [input_usd_per_mtok, output_usd_per_mtok]}` to add or override prices. |
 | `DB_PORT` | Host port for Postgres (default 5433, because 5432 is often taken). |
 | `API_TARGET` | Where the Next server proxies `/api` (read at runtime; Compose sets `http://api:8000`; default for local dev `http://localhost:8000`). |
@@ -91,6 +93,53 @@ sessions, so you can sign in as a different user in each. Two browsers also work
   Briefs and model outputs are passed to models only inside `<untrusted_source>` blocks.
 - **Keys** are per user, AES-256-GCM encrypted, never returned (only the last 4 characters),
   never logged, and never included in error messages.
+
+## OpenAI-compatible seats (Groq, NVIDIA NIM, Ollama, any `/v1` server)
+
+In the Council panel, **Add seat** adds a seat that talks to any OpenAI-style Chat Completions
+endpoint. Pick a preset (Groq, NVIDIA NIM, Ollama) or enter a base URL, paste a key if the
+provider needs one, press **Test & load models** (calls `GET {base}/models`, or Ollama's
+`/api/tags` if `/models` is unavailable; if neither works you type the model id by hand), then set
+the model's price (USD per million tokens in and out; `0` = free or local) and the seat's own
+token cap. A seat without a price is refused with a message: the cost cap would be meaningless.
+
+- No model ids or prices are hardcoded for these providers: you choose the model and the price per seat.
+- The per-run cost cap and token cap still apply to the whole council; the seat token cap
+  additionally limits one seat (its output allowance is clamped to what is left, and a seat with
+  almost nothing left sits the stage out; the run continues without it).
+- Each critique ends with a `SCORES: {...}` line. Parsing is tolerant (code fences, single quotes,
+  `7/10`, lists instead of JSON). If a seat's critique cannot be parsed it is marked failed for that
+  round, shown under **Run report**, and the run carries on with the other seats.
+- **The key for these seats is typed per run and held in memory only.** It is not stored (the
+  encrypted key store only knows the three built-in providers) and is never logged or returned.
+  Keys of other providers have no recognisable shape for the log scrubber; they are protected by never being logged.
+- With seats added, the council is the seats plus any built-in provider you saved a key for (no demo seats alongside).
+  Any seat, including a custom one, can write the final.
+
+### Running Ollama locally
+
+1. Install and start Ollama on the host (`ollama serve`; `ollama pull <model>`).
+2. Make it reachable from the api container. Ollama listens on `127.0.0.1` by default, which the
+   container cannot reach: start it with `OLLAMA_HOST=0.0.0.0` (or the host's docker bridge address).
+   Anything that can reach that port can use your Ollama, so firewall it.
+3. In `.env` set `COUNCIL_ALLOW_LOCAL_PROVIDERS=1`, then `docker compose up -d api`.
+   `docker-compose.yml` maps `host.docker.internal` to the host (`extra_hosts: host-gateway`), so the
+   Ollama preset (`http://host.docker.internal:11434/v1`) works on Linux too.
+4. Add an Ollama seat, load models, set both prices to `0`, set a token cap.
+
+### The SSRF flag, `COUNCIL_ALLOW_LOCAL_PROVIDERS`
+
+Seat base URLs are user input, and the api server makes the request. Default policy: the host
+must be a preset host (Groq, NVIDIA NIM, the Ollama name, plus `COUNCIL_PROVIDER_PRESETS`), and
+**every address it resolves to must be public**; otherwise the seat is rejected. The name is
+resolved and re-checked at connect time and the connection goes to the checked address (so DNS
+rebinding between check and use does not work); redirects are followed at most 3 hops and every hop
+is re-checked, so a provider cannot bounce the server to `169.254.169.254` or an internal host.
+Because the Ollama preset points at a private address, it needs the flag too.
+
+`COUNCIL_ALLOW_LOCAL_PROVIDERS=1` switches those checks off: any host, any address. That is right on
+your own machine and **wrong in any hosted deployment**, where a user could make the server call
+your internal network, cloud metadata service or other containers. Keep it `0` there.
 
 ## Demo script
 
@@ -135,7 +184,7 @@ against the running stack (it creates `smoke-*@example.com` users).
 
 | Cut or limited | Why |
 |---|---|
-| **No council provider has been run against its real API.** Anthropic, OpenAI and Google adapters all use the official SDKs and are tested against local stubs of each API (same contract suite for all three), never the real services. Model ids and prices were read from the vendors' pricing pages on 2026-11-15 and not otherwise verified; reasoning-effort/thinking parameters in particular may need adjusting for a given model. | The builder had no keys, and automated tests never call real APIs. First live run: use a small cap. |
+| **No council provider has been run against its real API, including Groq, NVIDIA NIM and Ollama.** The Anthropic, OpenAI and Google adapters use the official SDKs and the OpenAI-compatible adapter uses the OpenAI SDK; all are tested against local stubs of each API (one contract suite; the Groq, NIM and Ollama stubs mimic those servers' reply shapes from their documented behaviour, not from recorded traffic), never the real services. For the compatible providers the model list, `max_tokens` spelling, usage fields and Ollama's `/api/tags` fallback are the likeliest to differ from the stubs. Model ids and prices were read from the vendors' pricing pages on 2026-11-15 and not otherwise verified; reasoning-effort/thinking parameters in particular may need adjusting for a given model. | The builder had no keys, and automated tests never call real APIs. First live run: use a small cap. |
 | A provider without a key takes part as a **demo seat** (canned text, labelled "demo" in the panel). | Lets one key be enough to try the flow. |
 | **Canvas and the admin console are previews.** They run on sample data (and simulated collaborators) and carry a "Preview" label. | No backend exists for either yet. Docs, sheets, files, members, keys and the Council use the real API. |
 | The Council shows each provider's steps, tokens and spend, but not the models' text as it streams. | The API reports run steps and writes the result to files; the text of each draft is not exposed. |

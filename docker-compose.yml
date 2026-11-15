@@ -24,6 +24,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-coedit}:${POSTGRES_PASSWORD:-coedit}@db:5432/${POSTGRES_DB:-coedit}
       BLOB_DIR: /data/blobs
     volumes: [blobs:/data/blobs]
+    # Linux has no host.docker.internal by default; this makes the Ollama preset work there too.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     ports: ["8000:8000"]
     depends_on:
       db: { condition: service_healthy }
