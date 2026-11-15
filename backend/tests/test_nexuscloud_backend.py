@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from app.config import Settings, get_settings
 from app.council.netguard import UnsafeURL
@@ -21,7 +21,7 @@ from app.services.nexuscloud import NexusCloudBackend
 from tests.conftest import World
 from tests.test_files import upload
 
-TOKEN = "nct_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"
+TOKEN = "nct_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"  # fake-secret-ok
 SECRET_BODY = "internal-detail-do-not-leak"
 SIG = "SECRETSIG123"
 
@@ -566,3 +566,60 @@ async def test_local_backend_implements_the_same_interface() -> None:
         await backend.get(stored.key)
     with pytest.raises(ValueError):
         await backend.get("../../etc/passwd")
+
+
+# ---------- application startup (lifespan in app/main.py) ----------
+
+
+@pytest.fixture
+def startup_with(monkeypatch):
+    """Run the real app lifespan with STORAGE_BACKEND=nexuscloud and the given base URL."""
+    from app import main
+    from app.council import pipeline
+
+    async def no_db() -> None:  # the startup check must not depend on the database
+        return None
+
+    monkeypatch.setattr(pipeline, "fail_interrupted_runs", no_db)
+    monkeypatch.delitem(storage._instances, "nexuscloud", raising=False)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "storage_backend", "nexuscloud")
+    monkeypatch.setattr(settings, "nexuscloud_token", SecretStr(TOKEN))
+    monkeypatch.setattr(settings, "nexuscloud_allow_private", False)
+
+    async def start(base_url: str) -> None:
+        monkeypatch.setattr(settings, "nexuscloud_base_url", base_url)
+        async with main.lifespan(main.app):
+            pass
+
+    yield start
+    storage._instances.pop("nexuscloud", None)
+
+
+@pytest.mark.parametrize(
+    ("url", "error"),
+    [
+        ("https://127.0.0.1", UnsafeURL),  # loopback
+        ("https://169.254.169.254", UnsafeURL),  # cloud metadata address
+        ("https://10.0.0.5", UnsafeURL),  # private network
+        ("https://[::1]", UnsafeURL),
+        ("http://nexus.example", storage.StorageError),  # plaintext
+        ("file:///etc/passwd", storage.StorageError),
+        ("https://user:pw@nexus.example", storage.StorageError),  # credentials in the URL
+    ],
+)
+async def test_app_refuses_to_start_on_an_unsafe_nexuscloud_base_url(
+    startup_with, url: str, error: type[Exception], caplog
+) -> None:
+    with pytest.raises(error) as refused:
+        await startup_with(url)
+    assert TOKEN not in str(refused.value) and "pw@" not in str(refused.value)
+    assert TOKEN not in caplog.text
+
+
+async def test_app_starts_on_a_public_https_nexuscloud_base_url(startup_with, monkeypatch) -> None:
+    backend = NexusCloudBackend(
+        "https://nexus.example", TOKEN, resolver=resolver_for({"nexus.example": [PUBLIC]})
+    )
+    monkeypatch.setitem(storage._instances, "nexuscloud", backend)
+    await startup_with("https://nexus.example")  # completes: lifespan enters and exits cleanly

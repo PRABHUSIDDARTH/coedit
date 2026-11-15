@@ -1,4 +1,4 @@
-.PHONY: up down dev db migrate test test-backend test-sync test-frontend lint licences seed
+.PHONY: up down dev db migrate test test-backend test-sync test-frontend lint licences secrets-check seed
 
 up:
 	docker compose up --build
@@ -33,6 +33,12 @@ lint:
 	cd backend && uv run ruff check . && uv run ruff format --check .
 	cd sync && npx tsc --noEmit
 	cd frontend && pnpm lint && pnpm exec tsc --noEmit
+	$(MAKE) --no-print-directory secrets-check
+
+# Fails on key-shaped strings or private key headers in tracked files / git history, and on
+# tracked .env or key files. Fake fixtures: `# fake-secret-ok` on the line or .secrets-allowlist.
+secrets-check:
+	python3 scripts/secrets_check.py
 
 licences:
 	cd frontend && node scripts/check-licences.mjs
