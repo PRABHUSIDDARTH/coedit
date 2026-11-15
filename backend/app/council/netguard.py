@@ -22,6 +22,7 @@ import httpx
 
 Resolver = Callable[[str, int], Awaitable[list[str]]]
 MAX_REDIRECTS = 3
+MAX_ADDRESSES = 4
 
 
 class UnsafeURL(Exception):
@@ -34,7 +35,7 @@ async def system_resolver(host: str, port: int) -> list[str]:
         infos = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except socket.gaierror:
         raise UnsafeURL("The provider host could not be resolved.") from None
-    return sorted({str(info[4][0]) for info in infos})
+    return list(dict.fromkeys(str(info[4][0]) for info in infos))  # resolver order, deduped
 
 
 def is_public(address: str) -> bool:
@@ -125,15 +126,23 @@ class GuardedTransport(httpx.AsyncBaseTransport):
             )
         except UnsafeURL as exc:
             raise httpx.ConnectError(str(exc), request=request) from None
-        pinned = httpx.Request(
-            request.method,
-            request.url.copy_with(host=addresses[0]),
-            headers=request.headers,
-            stream=request.stream,
-            extensions={**request.extensions, "sni_hostname": host},
+        last: httpx.ConnectError | httpx.ConnectTimeout | None = None
+        for address in addresses[:MAX_ADDRESSES]:  # every one of them was checked above
+            pinned = httpx.Request(
+                request.method,
+                request.url.copy_with(host=address),
+                headers=request.headers,
+                stream=request.stream,
+                extensions={**request.extensions, "sni_hostname": host},
+            )
+            pinned.headers["Host"] = request.headers.get("Host", host)
+            try:
+                return await self._inner.handle_async_request(pinned)
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                last = exc  # e.g. an IPv6 address this network cannot route: try the next one
+        raise last or httpx.ConnectError(
+            "The provider host has no usable address.", request=request
         )
-        pinned.headers["Host"] = request.headers.get("Host", host)
-        return await self._inner.handle_async_request(pinned)
 
     async def aclose(self) -> None:
         await self._inner.aclose()

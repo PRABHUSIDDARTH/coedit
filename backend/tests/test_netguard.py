@@ -305,3 +305,36 @@ async def test_pinned_connection_still_verifies_tls_against_the_hostname(
                 await client.get(f"https://other.test:{port}/x")
     finally:
         server.shutdown()
+
+
+async def test_resolver_order_is_kept_and_a_dead_address_falls_through_to_the_next() -> None:
+    """A and AAAA records: the first address may be unroutable from this network."""
+    tried: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        tried.append(request.url.host)
+        if request.url.host == "2606:4700::1111":
+            raise httpx.ConnectError("Network is unreachable", request=request)
+        return httpx.Response(200, json={})
+
+    mapping = {"api.groq.com": ["2606:4700::1111", "104.18.38.236"]}
+    async with make_client(handler, mapping) as client:
+        assert (await client.get("https://api.groq.com/v1/models")).status_code == 200
+    assert tried == ["2606:4700::1111", "104.18.38.236"]  # resolver order, then fallback
+
+    async with make_client(handler, {"api.groq.com": ["2606:4700::1111"]}) as client:
+        with pytest.raises(httpx.ConnectError):  # all addresses dead -> a plain connect error
+            await client.get("https://api.groq.com/v1/models")
+
+
+async def test_one_private_address_among_several_still_refuses_the_host() -> None:
+    reached: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        reached.append(request.url.host)
+        return httpx.Response(200)
+
+    async with make_client(handler, {"api.groq.com": ["8.8.8.8", "10.0.0.1"]}) as client:
+        with pytest.raises(httpx.ConnectError, match="private or local"):
+            await client.get("https://api.groq.com/v1/models")
+    assert reached == []

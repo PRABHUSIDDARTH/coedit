@@ -86,3 +86,27 @@ def test_builtin_presets_and_config_presets(monkeypatch: pytest.MonkeyPatch) -> 
     )
     assert get_presets()["together"].base_url == "https://api.together.xyz/v1"
     assert "api.together.xyz" in preset_hosts()
+
+
+OPAQUE = "opaque-9f3a1c77e2b44d0f"  # no known key shape: the log scrubber cannot save us here
+
+
+@pytest.mark.parametrize("status", [401, 429, 500])
+async def test_unrecognisable_key_never_reaches_logs_or_errors(
+    stub: Stub,  # noqa: F811
+    caplog: pytest.LogCaptureFixture,
+    status: int,
+) -> None:
+    from app.logging_redact import scrub
+
+    assert scrub(OPAQUE) == OPAQUE  # precondition: the scrubber would not catch it
+    stub.responses = [(status, {"error": {"message": f"bad credentials {OPAQUE}"}})] * 3
+    adapter = OpenAICompatAdapter(seat(stub.url, OPAQUE), allow_local=True)
+    with caplog.at_level(logging.DEBUG, logger=""), pytest.raises(ProviderError) as caught:
+        await adapter.complete("s", "u", 10)
+    exc = caught.value
+    for text in (caplog.text, repr(exc), str(exc), repr(exc.args)):
+        assert OPAQUE not in text
+    assert exc.__cause__ is None and exc.__suppress_context__
+    # it really was sent as the credential, so the test exercises the real path
+    assert stub.requests[0]["headers"]["authorization"] == f"Bearer {OPAQUE}"
