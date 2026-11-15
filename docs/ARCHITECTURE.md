@@ -1,7 +1,7 @@
 # Architecture — coedit
 
 ## Verification status
-- No provider (Anthropic, OpenAI, Google, Groq, NVIDIA NIM, Ollama) has been run against a real API. Adapters are tested against local stub servers only; Groq/NIM/Ollama stub shapes come from documented behaviour, not recorded traffic.
+- Live evidence: one real run on Gemini and Groq (qwen) completed with 2 drafts, 1 critique, 1 synthesis; NVIDIA NIM returned HTTP 404 on three models (unresolved); OpenAI, Anthropic and Ollama not run live. Adapters are otherwise tested against local stub servers only; Groq/NIM/Ollama stub shapes come from documented behaviour, not recorded traffic.
 - Canvas and the admin console run on sample data (`frontend/src/mocks`) and are labelled Preview.
 - The NexusCloud backend is tested against a stub only and is off by default. Its downloads stream through the API and lose Range and ETag.
 - Viewer UI, Share/Members dialogs, import and two-user sync were checked by script, API or single-profile browser automation only, not by two real browsers.

@@ -6,7 +6,7 @@ and `PRD.md` when the writing model includes it; PRD is optional) using your own
 
 This is a demo slice, not a finished product. **Verification status** (read this first):
 
-- No LLM provider (Anthropic, OpenAI, Google, Groq, NVIDIA NIM, Ollama) has been run against its real API. The adapters were tested against local stub servers only. Council runs so far used demo (fake) seats or those stubs.
+- Live provider evidence, and nothing more: one real council run on Gemini and Groq (qwen) completed with 2 drafts, 1 critique and 1 synthesis. NVIDIA NIM returned HTTP 404 on three models and is unresolved. OpenAI and Anthropic have not been run live. Ollama has not been run live. Everything else about the adapters was tested against local stub servers only.
 - Canvas and the admin console run on sample data and are labelled Preview.
 - The NexusCloud storage backend was tested against a stub only and is off by default (`STORAGE_BACKEND=local`).
 - The viewer-role UI, the Share/Members dialogs, import and two-user sync were checked by scripts, the API, a scripted second peer and browser automation only. No person has yet clicked through them in two real browsers.
@@ -29,7 +29,7 @@ HyperFormula).
 
 Sign-up and login, workspaces with owner/editor/viewer roles, the file tree (folders, rename,
 delete, import, upload), live-collaborative docs and sheets with cursors and presence, file
-uploads with versions and download, members, per-user provider keys, and the AI Council pipeline (exercised with demo seats and local stub servers, never with a real provider; see Verification status).
+uploads with versions and download, members, per-user provider keys, and the AI Council pipeline (exercised with demo seats and local stub servers, plus the single live Gemini + Groq run listed in Verification status).
 Canvas and the admin console are labelled **Preview** and use sample data (see the table at the bottom).
 
 ## Setup
@@ -246,7 +246,7 @@ against the running stack (it creates `smoke-*@example.com` users).
 
 | Cut or limited | Why |
 |---|---|
-| **No council provider has been run against its real API, including Groq, NVIDIA NIM and Ollama.** The Anthropic, OpenAI and Google adapters use the official SDKs and the OpenAI-compatible adapter uses the OpenAI SDK; all are tested against local stubs of each API (one contract suite; the Groq, NIM and Ollama stubs mimic those servers' reply shapes from their documented behaviour, not from recorded traffic), never the real services. For the compatible providers the model list, `max_tokens` spelling, usage fields and Ollama's `/api/tags` fallback are the likeliest to differ from the stubs. Model ids and prices were entered from the vendors' pricing pages on 2026-11-15 (per the build notes) and have not been checked against a live API; reasoning-effort/thinking parameters in particular may need adjusting for a given model. | The builder had no keys, and automated tests never call real APIs. First live run: use a small cap. |
+| **Only Gemini and Groq (qwen) have had a live council run (see Verification status); the rest are stub-tested.** The Anthropic, OpenAI and Google adapters use the official SDKs and the OpenAI-compatible adapter uses the OpenAI SDK; all are tested against local stubs of each API (one contract suite; the Groq, NIM and Ollama stubs mimic those servers' reply shapes from their documented behaviour, not from recorded traffic), never the real services (except the one live Gemini + Groq run). For the compatible providers the model list, `max_tokens` spelling, usage fields and Ollama's `/api/tags` fallback are the likeliest to differ from the stubs. Model ids and prices were entered from the vendors' pricing pages on 2026-11-15 (per the build notes) and have not been checked against a live API; reasoning-effort/thinking parameters in particular may need adjusting for a given model. | The builder had no keys, and automated tests never call real APIs. First live run: use a small cap. |
 | A provider without a key takes part as a **demo seat** (canned text, labelled "demo" in the panel). | Lets one key be enough to try the flow. |
 | **Canvas and the admin console are previews.** They run on sample data (and simulated collaborators) and carry a "Preview" label. | No backend exists for either yet. Docs, sheets, files, members, keys and the Council use the real API. |
 | The Council shows each provider's steps, tokens and spend, but not the models' text as it streams. | The API reports run steps and writes the result to files; the text of each draft is not exposed. |
