@@ -329,9 +329,15 @@ async def test_request_shape_and_usage(stub: Stub, spec: Spec) -> None:
 @pytest.mark.parametrize("spec", SPECS, ids=ids)
 @pytest.mark.parametrize(("status", "attempts"), [(400, 1), (401, 1), (429, 2), (503, 2)])
 async def test_http_errors_are_status_only_and_retried_once(
-    stub: Stub, spec: Spec, status: int, attempts: int, caplog: pytest.LogCaptureFixture
+    stub: Stub,
+    spec: Spec,
+    status: int,
+    attempts: int,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    stub.responses = [(status, spec.error(status))] * 3
+    monkeypatch.setattr("app.council.adapters.google.EXTRA_503_BACKOFF_SECONDS", 0.01)
+    stub.responses = [(status, spec.error(status))] * 4
     with caplog.at_level(logging.DEBUG), pytest.raises(ProviderError) as caught:
         await spec.make(stub.url).complete("s", "u", 10)
     exc = caught.value
@@ -339,7 +345,9 @@ async def test_http_errors_are_status_only_and_retried_once(
     assert KEY not in str(exc) and KEY not in repr(exc) and KEY not in caplog.text
     assert exc.__cause__ is None and exc.__suppress_context__  # no chained SDK error
     assert safe_error(exc) == f"provider returned HTTP {status}"
-    assert len(stub.requests) == attempts  # transient errors: exactly one retry; others: none
+    # transient errors: exactly one retry; others: none. Google gets one more attempt for 503 only.
+    extra = 2 if (spec.name == "google" and status == 503) else 0
+    assert len(stub.requests) == attempts + extra
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=ids)
@@ -424,3 +432,24 @@ def test_empty_model_setting_falls_back_to_default() -> None:
     assert (
         s.council_model_openai == "gpt-6.1-terra" and s.council_model_google == "gemini-3.8-flash"
     )
+
+
+async def test_google_503_gets_one_extra_attempt_then_succeeds(
+    stub: Stub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.council.adapters.google.EXTRA_503_BACKOFF_SECONDS", 0.01)
+    stub.responses = [(503, GOOGLE.error(503))] * 2  # the SDK's own two attempts fail
+    stub.default = GOOGLE.ok  # the extra attempt succeeds
+    result = await GOOGLE.make(stub.url).complete("s", "u", 10)
+    assert result.text == "Hello world"
+    assert len(stub.requests) == 3
+
+
+async def test_google_429_and_500_do_not_get_the_extra_attempt(
+    stub: Stub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.council.adapters.google.EXTRA_503_BACKOFF_SECONDS", 0.01)
+    stub.responses = [(500, GOOGLE.error(500))] * 4
+    with pytest.raises(ProviderError):
+        await GOOGLE.make(stub.url).complete("s", "u", 10)
+    assert len(stub.requests) == 2

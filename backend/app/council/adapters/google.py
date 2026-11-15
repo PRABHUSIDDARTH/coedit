@@ -1,5 +1,6 @@
 """Gemini via the official google-genai SDK."""
 
+import asyncio
 import logging
 
 from google import genai
@@ -11,6 +12,9 @@ from app.council.adapters.base import Completion, ProviderError
 # error bodies can quote request details, and AGENTS.md says provider errors are logged by
 # status code only (the pipeline does that). Silence the SDK's own logger.
 logging.getLogger("google_genai").setLevel(logging.CRITICAL + 1)
+
+
+EXTRA_503_BACKOFF_SECONDS = 6.0
 
 
 class GoogleAdapter:
@@ -36,6 +40,18 @@ class GoogleAdapter:
         )
 
     async def complete(self, system: str, user: str, max_tokens: int) -> Completion:
+        """One extra attempt, after a longer pause, for 503 only (Gemini's "overloaded").
+        Runs inside the pipeline's per-call deadline (CALL_TIMEOUT_SECONDS), which cancels it;
+        a 503 reply carries no usage, so nothing extra is billed or counted against the cap."""
+        try:
+            return await self._complete_once(system, user, max_tokens)
+        except ProviderError as exc:
+            if exc.status != 503:
+                raise
+        await asyncio.sleep(EXTRA_503_BACKOFF_SECONDS)
+        return await self._complete_once(system, user, max_tokens)
+
+    async def _complete_once(self, system: str, user: str, max_tokens: int) -> Completion:
         try:
             response = await self._client.aio.models.generate_content(
                 model=self.model,
