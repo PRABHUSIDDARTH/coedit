@@ -1,0 +1,56 @@
+/* Coedit theme: "Tidal"
+   Structure: Linear/Notion-style cool neutrals. Color: Figma/Miro-style multi-hue set.
+   No purple, violet, magenta or pink anywhere. Hues generated in OKLCH at matched lightness per mode.
+   Light and dark are equal citizens. Text colors verified >= 4.5:1 on their ground. */
+
+:root, [data-theme="light"] {
+  --bg:        #FAFBFC;
+  --panel:     #FFFFFF;
+  --raised:    #F3F5F8;
+  --border:    #E3E7ED;
+  --text-1:    #0B0E13;
+  --text-2:    #3E4651;
+  --text-3:    #6B7480;
+  /* hues (light) */
+  --azure:     #0063C4;   /* brand */
+  --cyan:      #00778D;
+  --mint:      #007E46;
+  --sun:       #976C00;
+  --orange:    #C15100;   /* warm pop, second logo half */
+  --red:       #C2181D;
+  /* tidal gradient: azure -> cyan -> mint (cool only, never through purple) */
+  --tidal-1: #0063C4; --tidal-2: #007AA8; --tidal-3: #008775;
+  --on-fill:   #FFFFFF;
+}
+
+[data-theme="dark"] {
+  --bg:        #08090A;
+  --panel:     #0F1011;
+  --raised:    #141516;
+  --border:    #23252A;
+  --text-1:    #F7F8F8;
+  --text-2:    #D0D6E0;
+  --text-3:    #8A8F98;
+  --azure:     #43ACFB;
+  --cyan:      #3BCDDC;
+  --mint:      #4ED589;
+  --sun:       #FAD03E;
+  --orange:    #FD8537;
+  --red:       #F76560;
+  --tidal-1: #43ACFB; --tidal-2: #00BDDE; --tidal-3: #00C5AA;
+  --on-fill:   #08090A;
+}
+
+:root {
+  --tidal: linear-gradient(90deg, var(--tidal-1), var(--tidal-2), var(--tidal-3));
+  --brand: var(--azure);
+  --pop: var(--orange);   /* warm pop; not shadcn's --accent */
+  /* status reuses hues, no extra palette */
+  --success: var(--mint);
+  --warning: var(--sun);
+  --danger:  var(--red);
+  --info:    var(--cyan);
+  /* collaborator cursors and AI Council seats, in order of assignment */
+  --seat-1: var(--azure); --seat-2: var(--orange); --seat-3: var(--mint);
+  --seat-4: var(--cyan);  --seat-5: var(--sun);    --seat-6: var(--red);
+}
