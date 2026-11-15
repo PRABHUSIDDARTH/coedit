@@ -34,6 +34,7 @@ MUTATING: list[tuple[str, str, dict | None, str]] = [
         {"brief": "x", "synth_provider": "anthropic", "token_cap": 1000, "cost_cap_usd": "1"},
         "owner",
     ),
+    ("POST", "/api/workspaces/{workspace_id}/council/models", {"preset": "groq"}, "owner"),
 ]
 
 

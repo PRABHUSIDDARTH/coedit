@@ -82,12 +82,16 @@ async def validate_base_url(
     *,
     allow_local: bool,
     preset_hosts: frozenset[str] = frozenset(),
-    resolver: Resolver = system_resolver,
+    resolver: Resolver | None = None,
 ) -> str:
     """Validate and normalise (strip trailing slash). Raises UnsafeURL."""
     _, host, port = _host_port(url)
     await check_host(
-        host, port, allow_local=allow_local, preset_hosts=preset_hosts, resolver=resolver
+        host,
+        port,
+        allow_local=allow_local,
+        preset_hosts=preset_hosts,
+        resolver=resolver or system_resolver,  # looked up at call time, so tests can replace it
     )
     return url.strip().rstrip("/")
 

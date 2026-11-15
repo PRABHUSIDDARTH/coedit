@@ -5,6 +5,7 @@ critiques, fetched pages — is wrapped in <untrusted_source> blocks in the USER
 prompts are constants and never contain such text.
 """
 
+import json
 import re
 
 ALLOWED_FILES = ("AGENTS.md", "ARCHITECTURE.md", "PRD.md")
@@ -24,6 +25,8 @@ CRITIQUE_SYSTEM = (
     "You are one member of a small council of engineers. Stage: critique.\n"
     "You are given the brief and the other members' drafts. Point out errors, gaps, risky "
     "assumptions and over-engineering, and say what you would keep. Be specific and brief.\n"
+    "Finish with one last line that scores each draft from 1 (poor) to 10 (excellent), using the "
+    'draft names from the source ids, exactly like: SCORES: {"<draft name>": 7, "<draft name>": 4}\n'
     + _DATA_RULE
 )
 SYNTHESIS_SYSTEM = (
@@ -83,3 +86,57 @@ def parse_files(text: str) -> dict[str, str]:
             end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
             files[name] = text[marker.end() : end].strip("\n") + "\n"
     return files
+
+
+_SCORES_LINE = re.compile(r"^[ \t*_`#>\-]*scores?\b[\s*_`:=\-]*", re.IGNORECASE | re.MULTILINE)
+_SCORES_ANY = re.compile(r"scores?\b[\s*_`:=\-]*", re.IGNORECASE)
+_PAIR = re.compile(
+    r"""["'`*_\s]*(?P<name>[A-Za-z0-9][\w.:\-]*)["'`*_\s]*[:=\-]+\s*\**\s*(?P<num>-?\d+(?:\.\d+)?)""",
+)
+_SMART = str.maketrans({"\u201c": '"', "\u201d": '"', "\u2018": "'", "\u2019": "'"})
+
+
+def _valid(value: object) -> int | None:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return round(number) if 0 <= number <= 10 else None
+
+
+def parse_scores(text: str, expected: tuple[str, ...]) -> dict[str, int] | None:
+    """Pull `{"draft name": score}` out of a critique, tolerating what models actually emit:
+    code fences, single or smart quotes, trailing commas, `7/10`, markdown bold, `name: 7`
+    lists instead of JSON, extra prose after the scores. Looks at the LAST "SCORES" mention.
+    Only names in `expected` count; scores outside 0..10 are dropped. Returns None when nothing
+    usable was found (the caller then marks this critique failed), never raises."""
+    try:
+        clean = text.translate(_SMART)
+        found = list(_SCORES_LINE.finditer(clean)) or list(_SCORES_ANY.finditer(clean))
+        if not found or not expected:
+            return None
+        tail = clean[found[-1].end() :]
+        tail = tail.replace("```json", "").replace("```", "")
+        scores: dict[str, int] = {}
+        brace = re.search(r"\{.*?\}", tail, re.DOTALL)
+        if brace:
+            blob = re.sub(r",\s*([}\]])", r"\1", brace.group(0).replace("'", '"'))
+            try:
+                parsed = json.loads(blob)
+            except ValueError:
+                parsed = None
+            if isinstance(parsed, dict):
+                for name, raw in parsed.items():
+                    name = str(name).removeprefix("draft-")
+                    score = _valid(str(raw).split("/")[0]) if not isinstance(raw, bool) else None
+                    if name in expected and score is not None:
+                        scores[name] = score
+        if not scores:  # not JSON (or not usable): fall back to `name: 7` pairs
+            for pair in _PAIR.finditer(tail[:2000]):
+                score = _valid(pair.group("num"))
+                name = pair.group("name").removeprefix("draft-")
+                if name in expected and score is not None:
+                    scores.setdefault(name, score)
+        return scores or None
+    except Exception:  # noqa: BLE001  (a parser must never take the run down)
+        return None

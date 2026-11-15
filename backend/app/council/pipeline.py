@@ -7,16 +7,16 @@ short session at a time; the parallel provider calls never touch the database.
 import asyncio
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 
 from sqlalchemy import func, select, update
 
 from app.council import prompts
 from app.council.adapters.base import Completion, LLMAdapter, ProviderError
-from app.council.prices import UnknownModelPrice, price_for
+from app.council.prices import Price, UnknownModelPrice, price_for
 from app.db import SessionLocal
-from app.models import CouncilRun, CouncilStep, File, FileKind, Folder, Provider, RunStatus, Stage
+from app.models import CouncilRun, CouncilStep, File, FileKind, Folder, RunStatus, Stage
 from app.services import storage
 
 logger = logging.getLogger(__name__)
@@ -26,28 +26,47 @@ HARD_COST_CAP_USD = Decimal(5)
 CALL_TIMEOUT_SECONDS = 120
 # Output allowance per call (for Claude this includes thinking tokens).
 MAX_TOKENS = {Stage.draft: 4000, Stage.critique: 3000, Stage.synthesis: 12000}
+# A seat with less than this left under its own token cap sits the stage out.
+MIN_OUTPUT_TOKENS = 200
 ACTIVE = (RunStatus.queued, RunStatus.drafting, RunStatus.critiquing, RunStatus.synthesizing)
 
 _tasks: set[asyncio.Task[None]] = set()  # strong references so running tasks are not collected
 
 
+def seat_price(adapter: LLMAdapter) -> Price:
+    """The seat's own price (custom OpenAI-compatible seats carry one, 0 = free) or the table
+    price for its model. Raises UnknownModelPrice: a model without a price cannot be run."""
+    own = getattr(adapter, "price", None)
+    return own if own is not None else price_for(adapter.model)
+
+
 @dataclass(frozen=True)
 class Call:
-    provider: Provider
+    provider: str  # seat id: a native provider name or a custom seat id
     adapter: LLMAdapter
     stage: Stage
     system: str
     user: str
+    #: tokens the seat may still use under its own cap (None = no per-seat cap)
+    seat_tokens_left: int | None = None
+    #: draft seat ids a critique should score
+    expect: tuple[str, ...] = ()
+
+    @property
+    def input_estimate(self) -> int:
+        return (len(self.system) + len(self.user)) // 4 + 1
 
     @property
     def max_tokens(self) -> int:
-        return MAX_TOKENS[self.stage]
+        allowance = MAX_TOKENS[self.stage]
+        if self.seat_tokens_left is None:
+            return allowance
+        return max(0, min(allowance, self.seat_tokens_left - self.input_estimate))
 
     def estimate(self) -> tuple[int, Decimal]:
         """Worst-case (tokens, cost): input at ~4 chars per token plus the full output allowance."""
-        input_tokens = (len(self.system) + len(self.user)) // 4 + 1
-        cost = price_for(self.adapter.model).cost(input_tokens, self.max_tokens)
-        return input_tokens + self.max_tokens, cost
+        cost = seat_price(self.adapter).cost(self.input_estimate, self.max_tokens)
+        return self.input_estimate + self.max_tokens, cost
 
 
 @dataclass
@@ -56,6 +75,20 @@ class Budget:
     cost_cap: Decimal
     tokens: int = 0
     cost: Decimal = Decimal(0)
+    seat_tokens: dict[str, int] = field(default_factory=dict)
+
+    def call(
+        self,
+        seat: str,
+        adapter: LLMAdapter,
+        stage: Stage,
+        system: str,
+        user: str,
+        expect: tuple[str, ...] = (),
+    ) -> Call:
+        cap = getattr(adapter, "token_cap", None)
+        left = None if cap is None else cap - self.seat_tokens.get(seat, 0)
+        return Call(seat, adapter, stage, system, user, left, expect)
 
     def affordable(self, calls: list[Call]) -> bool:
         """Would this whole stage fit? Checked once for all its parallel calls together, so
@@ -66,10 +99,12 @@ class Budget:
             and self.cost + sum(c for _, c in estimates) <= self.cost_cap
         )
 
-    def charge(self, model: str, completion: Completion) -> Decimal:
-        cost = price_for(model).cost(completion.input_tokens, completion.output_tokens)
-        self.tokens += completion.input_tokens + completion.output_tokens
+    def charge(self, call: Call, completion: Completion) -> Decimal:
+        cost = seat_price(call.adapter).cost(completion.input_tokens, completion.output_tokens)
+        used = completion.input_tokens + completion.output_tokens
+        self.tokens += used
         self.cost += cost
+        self.seat_tokens[call.provider] = self.seat_tokens.get(call.provider, 0) + used
         return cost
 
 
@@ -77,8 +112,7 @@ def stage_estimate_tokens(adapters: list[LLMAdapter], brief: str) -> int:
     """Token reservation for the draft stage with these adapters (used to size caps)."""
     user = prompts.draft_user(brief)
     return sum(
-        Call(Provider.anthropic, a, Stage.draft, prompts.DRAFT_SYSTEM, user).estimate()[0]
-        for a in adapters
+        Call("seat", a, Stage.draft, prompts.DRAFT_SYSTEM, user).estimate()[0] for a in adapters
     )
 
 
@@ -100,7 +134,7 @@ async def _invoke(call: Call) -> Completion | BaseException:
     except Exception as exc:  # noqa: BLE001  (any provider failure is recorded, not raised)
         logger.warning(
             "council call failed: provider=%s stage=%s error=%s",
-            call.provider.value,
+            call.provider,
             call.stage.value,
             safe_error(exc),
         )
@@ -117,18 +151,32 @@ async def _set_status(run_id: uuid.UUID, status: RunStatus, error: str | None = 
 
 
 async def _run_stage(
-    run_id: uuid.UUID, budget: Budget, status: RunStatus, calls: list[Call]
-) -> dict[Provider, str] | None:
+    run_id: uuid.UUID, budget: Budget, status: RunStatus, all_calls: list[Call]
+) -> dict[str, str] | None:
     """Run one stage's calls in parallel and record them. Returns the successful outputs by
-    provider, or None if the stage did not fit in the budget (the run is then `capped`)."""
+    seat, or None if the stage did not fit in the budget (the run is then `capped`). A seat that
+    is out of its own token cap sits the stage out; a critique whose scores cannot be parsed is
+    recorded as failed. Neither stops the run."""
+    calls = [c for c in all_calls if c.max_tokens >= MIN_OUTPUT_TOKENS]
+    over_cap = [c for c in all_calls if c not in calls]
     if not budget.affordable(calls):
         await _set_status(run_id, RunStatus.capped)
         return None
     await _set_status(run_id, status)
     results = await asyncio.gather(*(_invoke(call) for call in calls))
 
-    outputs: dict[Provider, str] = {}
+    outputs: dict[str, str] = {}
     async with SessionLocal() as db:
+        for call in over_cap:
+            db.add(
+                CouncilStep(
+                    run_id=run_id,
+                    stage=call.stage,
+                    provider=call.provider,
+                    model=call.adapter.model,
+                    error="seat token cap reached",
+                )
+            )
         for call, result in zip(calls, results, strict=True):
             step = CouncilStep(
                 run_id=run_id, stage=call.stage, provider=call.provider, model=call.adapter.model
@@ -138,9 +186,14 @@ async def _run_stage(
             else:
                 step.input_tokens = result.input_tokens
                 step.output_tokens = result.output_tokens
-                step.cost_usd = budget.charge(call.adapter.model, result)
+                step.cost_usd = budget.charge(call, result)
                 step.output_text = result.text
-                outputs[call.provider] = result.text
+                if call.stage == Stage.critique:
+                    step.scores = prompts.parse_scores(result.text, call.expect)
+                    if step.scores is None:
+                        step.error = "critique scores could not be parsed"
+                if step.error is None:
+                    outputs[call.provider] = result.text
             db.add(step)
         await db.execute(
             update(CouncilRun)
@@ -176,12 +229,13 @@ async def _save_files(run: CouncilRun, files: dict[str, str]) -> None:
         await db.commit()
 
 
-async def _run(run_id: uuid.UUID, adapters: dict[Provider, LLMAdapter]) -> None:
+async def _run(run_id: uuid.UUID, adapters: dict[str, LLMAdapter]) -> None:
+    adapters = {str(seat): adapter for seat, adapter in adapters.items()}
     async with SessionLocal() as db:
         run = await db.get_one(CouncilRun, run_id)
     try:
         for adapter in adapters.values():
-            price_for(adapter.model)
+            seat_price(adapter)
     except UnknownModelPrice as exc:
         await _set_status(
             run_id,
@@ -199,7 +253,7 @@ async def _run(run_id: uuid.UUID, adapters: dict[Provider, LLMAdapter]) -> None:
         budget,
         RunStatus.drafting,
         [
-            Call(p, a, Stage.draft, prompts.DRAFT_SYSTEM, prompts.draft_user(brief))
+            budget.call(p, a, Stage.draft, prompts.DRAFT_SYSTEM, prompts.draft_user(brief))
             for p, a in adapters.items()
         ],
     )
@@ -214,12 +268,13 @@ async def _run(run_id: uuid.UUID, adapters: dict[Provider, LLMAdapter]) -> None:
         budget,
         RunStatus.critiquing,
         [
-            Call(
+            budget.call(
                 p,
                 adapters[p],
                 Stage.critique,
                 prompts.CRITIQUE_SYSTEM,
-                prompts.critique_user(brief, {q.value: d for q, d in drafts.items() if q != p}),
+                prompts.critique_user(brief, {q: d for q, d in drafts.items() if q != p}),
+                expect=tuple(q for q in drafts if q != p),
             )
             for p in drafts
         ],
@@ -228,18 +283,17 @@ async def _run(run_id: uuid.UUID, adapters: dict[Provider, LLMAdapter]) -> None:
         return
 
     synth = run.synth_provider
-    named = lambda outputs: {p.value: text for p, text in outputs.items()}
     synthesis = await _run_stage(
         run_id,
         budget,
         RunStatus.synthesizing,
         [
-            Call(
+            budget.call(
                 synth,
                 adapters[synth],
                 Stage.synthesis,
                 prompts.SYNTHESIS_SYSTEM,
-                prompts.synthesis_user(brief, named(drafts), named(critiques)),
+                prompts.synthesis_user(brief, drafts, critiques),
             )
         ],
     )
@@ -260,7 +314,7 @@ async def _run(run_id: uuid.UUID, adapters: dict[Provider, LLMAdapter]) -> None:
     await _set_status(run_id, RunStatus.done)
 
 
-async def run_council(run_id: uuid.UUID, adapters: dict[Provider, LLMAdapter]) -> None:
+async def run_council(run_id: uuid.UUID, adapters: dict[str, LLMAdapter]) -> None:
     try:
         await _run(run_id, adapters)
     except Exception as exc:  # noqa: BLE001
@@ -268,7 +322,7 @@ async def run_council(run_id: uuid.UUID, adapters: dict[Provider, LLMAdapter]) -
         await _set_status(run_id, RunStatus.failed, f"Internal error ({type(exc).__name__}).")
 
 
-def launch(run_id: uuid.UUID, adapters: dict[Provider, LLMAdapter]) -> None:
+def launch(run_id: uuid.UUID, adapters: dict[str, LLMAdapter]) -> None:
     task = asyncio.create_task(run_council(run_id, adapters), name=f"council-{run_id}")
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)

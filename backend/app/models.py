@@ -16,7 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import CITEXT
+from sqlalchemy.dialects.postgresql import CITEXT, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -214,7 +214,7 @@ class CouncilRun(Base):
     )
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     brief: Mapped[str] = mapped_column(Text)
-    synth_provider: Mapped[Provider] = mapped_column(Enum(Provider, name="llm_provider"))
+    synth_provider: Mapped[str] = mapped_column(Text)  # seat id: a Provider value or a custom id
     status: Mapped[RunStatus] = mapped_column(
         Enum(RunStatus, name="council_run_status"), default=RunStatus.queued
     )
@@ -237,11 +237,12 @@ class CouncilStep(Base):
         ForeignKey("council_runs.id", ondelete="CASCADE"), index=True
     )
     stage: Mapped[Stage] = mapped_column(Enum(Stage, name="council_stage"))
-    provider: Mapped[Provider] = mapped_column(Enum(Provider, name="llm_provider"))
+    provider: Mapped[str] = mapped_column(Text)  # seat id: a Provider value or a custom seat id
     model: Mapped[str] = mapped_column(Text)
     input_tokens: Mapped[int] = mapped_column(default=0)
     output_tokens: Mapped[int] = mapped_column(default=0)
     cost_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=Decimal(0))
     output_text: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[str | None] = mapped_column(Text)
+    scores: Mapped[dict | None] = mapped_column(JSONB)  # critique stage: {draft seat: 0..10}
     created_at: Mapped[datetime] = _created_at()

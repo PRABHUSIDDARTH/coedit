@@ -1,6 +1,8 @@
 """Deterministic stand-in for a provider: used by every test and by COUNCIL_FAKE=1."""
 
 import hashlib
+import json
+import re
 
 from app.council import prompts
 from app.council.adapters.base import Completion
@@ -38,6 +40,9 @@ class FakeAdapter:
             text = (
                 f"[{self.name}] {stage} of input {digest}: looks reasonable; keep the scope small."
             )
+            if stage == "critique":
+                names = re.findall(r'<untrusted_source id="draft-([^"]+)"', user)
+                text += "\nSCORES: " + json.dumps({n: 7 for n in names})
         tokens_in, tokens_out = self.tokens or (
             (len(system) + len(user)) // 4,
             min(len(text) // 4, max_tokens),
