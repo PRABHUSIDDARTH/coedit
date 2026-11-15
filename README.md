@@ -262,3 +262,7 @@ against the running stack (it creates `smoke-*@example.com` users).
 Known rough edges: the whole sheet re-renders per keystroke (fine at this size); exported CSV does
 not neutralise cells beginning with `+`, `-` or `@` for spreadsheet programs; doc comments live in
 the same Yjs document as the text, so they have no separate permissions or notifications.
+
+## Dev-only dependencies (frontend tests)
+`jsdom`, `@testing-library/react`, `@testing-library/user-event` (devDependencies, MIT) run the component tests in
+`frontend/src/components/council/model-combobox.test.tsx`. They are not in the production bundle.

@@ -5,6 +5,8 @@ import { useState } from "react";
 import { type Preset, type SeatRequest, useSeatModels } from "@/api/council";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ModelCombobox } from "./model-combobox";
+import { visibleModels } from "./model-filter";
 
 const MAX_SEATS = 5;
 export const CUSTOM = "custom";
@@ -57,7 +59,7 @@ function SeatRow({ seat, presets, workspaceId, disabled, onChange, onRemove }: {
       { preset: seat.preset === CUSTOM ? null : seat.preset, base_url: seat.preset === CUSTOM ? seat.baseUrl.trim() : null, api_key: seat.apiKey.trim() || null },
       { onSuccess: (r) => setModels(r.models) },
     );
-  const listId = `models-${seat.id}`;
+  const hiddenCount = visibleModels(models, false).hidden;
   const problem = seatProblem(seat, presets);
   return (
     <li className="space-y-2 rounded-lg border border-border bg-panel p-3">
@@ -75,20 +77,24 @@ function SeatRow({ seat, presets, workspaceId, disabled, onChange, onRemove }: {
         {seat.preset === CUSTOM
           ? <label className="space-y-1 text-xs font-medium text-ink">Base URL<Input value={seat.baseUrl} disabled={disabled} onChange={(e) => set({ baseUrl: e.target.value })} placeholder="https://host/v1" className="h-9" /></label>
           : <p className="self-end pb-2 font-mono text-[11px] text-ink-3 break-all">{preset?.base_url}</p>}
-        <label className="space-y-1 text-xs font-medium text-ink">API key {preset && !preset.needs_key ? "(optional)" : ""}
+      </div>
+      <div className="space-y-2">
+        <label className="block space-y-1 text-xs font-medium text-ink">API key {preset && !preset.needs_key ? "(optional)" : ""}
           <Input type="password" autoComplete="off" value={seat.apiKey} disabled={disabled} onChange={(e) => set({ apiKey: e.target.value })} placeholder="Used for this run only, never stored" className="h-9" />
         </label>
+      </div>
+      <div className="space-y-2">
         <div className="space-y-1 text-xs font-medium text-ink">
           <label htmlFor={`model-${seat.id}`}>Model</label>
-          <div className="flex gap-1.5">
-            <Input id={`model-${seat.id}`} list={listId} value={seat.model} disabled={disabled} onChange={(e) => set({ model: e.target.value })} placeholder={models.length ? "Choose a model" : "Type a model id"} className="h-9 min-w-0 flex-1 font-mono text-xs" />
-            <datalist id={listId}>{models.map((m) => <option key={m} value={m} />)}</datalist>
-            <Button type="button" size="sm" variant="outline" disabled={disabled || probe.isPending || (seat.preset === CUSTOM && !seat.baseUrl.trim())} onClick={load}>{probe.isPending ? "Testing…" : "Test & load models"}</Button>
-          </div>
+          <ModelCombobox id={`model-${seat.id}`} value={seat.model} onChange={(model) => set({ model })} models={models} disabled={disabled} />
         </div>
+        <Button type="button" size="sm" variant="outline" className="w-full sm:w-auto" disabled={disabled || probe.isPending || (seat.preset === CUSTOM && !seat.baseUrl.trim())} onClick={load}>{probe.isPending ? "Testing…" : "Test & load models"}</Button>
       </div>
+      <p className="sr-only" aria-live="polite">{probe.isPending ? "Loading models" : ""}</p>
+      {probe.isPending && <p className="text-xs text-ink-3">Loading models…</p>}
       {probe.isError && <p role="alert" className="flex items-center gap-1.5 text-xs text-danger"><XCircle className="size-3.5" aria-hidden />{probe.error.message}</p>}
-      {probe.data && probe.data.ok && <p className="flex items-center gap-1.5 text-xs text-success"><CheckCircle2 className="size-3.5" aria-hidden />Connected: {probe.data.models.length} models{probe.data.source === "ollama-tags" ? " (Ollama list)" : ""}.</p>}
+      {probe.data && probe.data.ok && probe.data.models.length > 0 && <p className="flex items-center gap-1.5 text-xs text-success"><CheckCircle2 className="size-3.5" aria-hidden />Loaded {probe.data.models.length} models ({hiddenCount} hidden){probe.data.source === "ollama-tags" ? " (Ollama list)" : ""}.</p>}
+      {probe.data && probe.data.ok && probe.data.models.length === 0 && <p role="status" className="flex items-center gap-1.5 text-xs text-warning"><XCircle className="size-3.5" aria-hidden />Connected, but the provider listed no models. Type a model id.</p>}
       {probe.data && !probe.data.ok && <p role="alert" className="flex items-center gap-1.5 text-xs text-warning"><XCircle className="size-3.5" aria-hidden />{probe.data.error}</p>}
       <div className="grid gap-2 sm:grid-cols-3">
         <label className="space-y-1 text-xs font-medium text-ink">Price in, $/M tokens<input type="number" min={0} step="any" value={seat.priceIn} disabled={disabled} onChange={(e) => set({ priceIn: e.target.value })} placeholder="0 = free" className={field} /></label>
