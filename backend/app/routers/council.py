@@ -225,7 +225,10 @@ async def council_models(
     await require_role(db, user, workspace_id, Role.owner)
     settings = get_settings()
     seat = SeatIn(id="probe", preset=body.preset, base_url=body.base_url, model="-", token_cap=1)
-    base_url = await _seat_url(seat)
+    try:
+        base_url = await _seat_url(seat)
+    except HTTPException as exc:
+        raise _bad(str(exc.detail).removeprefix("Seat 'probe': ")) from None
     result = await list_models(
         base_url,
         body.api_key.get_secret_value().strip() if body.api_key else None,

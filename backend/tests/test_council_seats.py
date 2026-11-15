@@ -364,7 +364,7 @@ async def test_models_endpoint_rejects_ssrf_and_wires_through(
 ) -> None:
     url = f"/api/workspaces/{world.workspace_id}/council/models"
     bad = await world.owner.post(url, json={"base_url": "http://169.254.169.254/v1"})
-    assert bad.status_code == 422
+    assert bad.status_code == 422 and "probe" not in bad.text
 
     async def fake_list(base, key, **kw):
         assert base == "https://api.groq.com/openai/v1" and key == SECRET
