@@ -27,3 +27,6 @@
 .remote-caret__label { position: absolute; top: -1.45em; left: -2px; z-index: 5; background: var(--c); color: var(--on-fill); font: 500 11px/1 var(--font-inter), system-ui, sans-serif; padding: 3px 6px; border-radius: 4px 4px 4px 0; white-space: nowrap; user-select: none; }
 .remote-caret--typing .remote-caret__label::after { content: " …"; }
 @media (prefers-reduced-motion: no-preference) { .remote-caret { transition: border-color .2s; } }
+
+/* The Collaboration caret extension renders ".ProseMirror-yjs-cursor" wrappers; ours is the child. */
+.doc-prose .remote-caret { pointer-events: none; }

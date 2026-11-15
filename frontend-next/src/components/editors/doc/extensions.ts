@@ -1,6 +1,4 @@
 import { Extension, Mark, mergeAttributes, type Editor, type Range } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import Suggestion, { type SuggestionKeyDownProps, type SuggestionProps } from "@tiptap/suggestion";
 
 /* ---------- Comment mark ---------- */
@@ -25,47 +23,6 @@ export const Comment = Mark.create({
     };
   },
 });
-
-/* ---------- Remote carets ---------- */
-export interface RemoteCaret { id: string; name: string; seat: number; pos: number; typing?: boolean }
-const carets = new PluginKey<DecorationSet>("remote-carets");
-
-export const RemoteCarets = Extension.create({
-  name: "remoteCarets",
-  addProseMirrorPlugins() {
-    return [
-      new Plugin<DecorationSet>({
-        key: carets,
-        state: {
-          init: () => DecorationSet.empty,
-          apply(tr, set) {
-            const next = tr.getMeta(carets) as RemoteCaret[] | undefined;
-            if (!next) return set.map(tr.mapping, tr.doc);
-            return DecorationSet.create(tr.doc, next.map((c) => {
-              const pos = Math.max(1, Math.min(c.pos, tr.doc.content.size - 1));
-              return Decoration.widget(pos, () => {
-                const el = document.createElement("span");
-                el.className = "remote-caret" + (c.typing ? " remote-caret--typing" : "");
-                el.style.setProperty("--c", `var(--seat-${((c.seat - 1) % 6) + 1})`);
-                const label = document.createElement("span");
-                label.className = "remote-caret__label";
-                label.textContent = c.name.split(" ")[0];
-                el.appendChild(label);
-                return el;
-              }, { side: 1, key: `${c.id}:${pos}:${c.typing ? 1 : 0}`, ignoreSelection: true });
-            }));
-          },
-        },
-        props: { decorations: (state) => carets.getState(state) },
-      }),
-    ];
-  },
-});
-
-export const setRemoteCarets = (editor: Editor, list: RemoteCaret[]) => {
-  if (editor.isDestroyed) return;
-  editor.view.dispatch(editor.state.tr.setMeta(carets, list).setMeta("addToHistory", false));
-};
 
 /* ---------- Slash menu ---------- */
 export interface SlashItem { title: string; hint: string; run: (editor: Editor, range: Range) => void }
