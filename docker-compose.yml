@@ -1,0 +1,51 @@
+name: coedit
+
+x-db-env: &db-env
+  POSTGRES_USER: ${POSTGRES_USER:-coedit}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-coedit}
+  POSTGRES_DB: ${POSTGRES_DB:-coedit}
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment: *db-env
+    ports: ["${DB_PORT:-5433}:5432"]  # 5433 on the host: 5432 is often taken
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-coedit}:${POSTGRES_PASSWORD:-coedit}@db:5432/${POSTGRES_DB:-coedit}
+      BLOB_DIR: /data/blobs
+    volumes: [blobs:/data/blobs]
+    ports: ["8000:8000"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  sync:
+    build: ./sync
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-coedit}:${POSTGRES_PASSWORD:-coedit}@db:5432/${POSTGRES_DB:-coedit}
+      PORT: "1234"
+    ports: ["1234:1234"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  web:
+    build: ./frontend
+    environment:
+      API_TARGET: http://api:8000
+      SYNC_TARGET: ws://sync:1234
+    ports: ["5173:5173"]
+    depends_on: [api, sync]
+
+volumes:
+  pgdata:
+  blobs:
