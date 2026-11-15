@@ -92,17 +92,24 @@ class World:
     workspace_id: str
     folder_id: str
     file_id: str
+    run_id: str
 
     def ids(self) -> dict[str, str]:
         return {
             "workspace_id": self.workspace_id,
             "folder_id": self.folder_id,
             "file_id": self.file_id,
+            "run_id": self.run_id,
             "user_id": self.users["viewer"]["id"],
         }
 
 
 async def make_world() -> World:
+    import uuid
+
+    from app.db import SessionLocal
+    from app.models import CouncilRun, RunStatus
+
     w = World()
     w.users = {}
     for role in ("owner", "editor", "viewer", "outsider"):
@@ -127,6 +134,22 @@ async def make_world() -> World:
     )
     assert resp.status_code == 201, resp.text
     w.file_id = resp.json()["id"]
+    async with SessionLocal() as db:  # a finished run, so run-level routes have a real target
+        run = CouncilRun(
+            id=uuid.uuid4(),
+            workspace_id=uuid.UUID(w.workspace_id),
+            created_by=uuid.UUID(w.users["owner"]["id"]),
+            brief="x",
+            synth_provider="anthropic",
+            status=RunStatus.done,
+            token_cap=1000,
+            cost_cap_usd=1,
+            tokens_used=0,
+            cost_usd=0,
+        )
+        db.add(run)
+        await db.commit()
+        w.run_id = str(run.id)
     return w
 
 

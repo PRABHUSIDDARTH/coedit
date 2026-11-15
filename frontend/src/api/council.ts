@@ -143,6 +143,21 @@ export function useStartRun(workspaceId: string) {
   });
 }
 
+/** Same text the API stores when the owner stops a run. */
+export const STOPPED_MESSAGE = "Stopped by the owner.";
+
+/** Stop a running council. What already finished stays; the run ends as stopped. */
+export function useStopRun(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) => api<Run>(`/council/runs/${runId}/cancel`, { method: "POST" }),
+    onSuccess: (run) => {
+      qc.setQueryData(["run", run.id], run);
+      void qc.invalidateQueries({ queryKey: ["runs", workspaceId] });
+    },
+  });
+}
+
 /** Models a preset / base URL offers (`GET {base}/models`, Ollama's tag list as a fallback). Doubles as "Test connection". */
 export function useSeatModels(workspaceId: string) {
   return useMutation({

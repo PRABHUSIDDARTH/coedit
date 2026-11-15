@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertTriangle, Check, FileText, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, FileText, Loader2, Square } from "lucide-react";
 import Link from "next/link";
-import { isActive, PROVIDERS, seatLabel, type Run, type RunStep } from "@/api/council";
+import { isActive, PROVIDERS, seatLabel, STOPPED_MESSAGE, useStopRun, type Run, type RunStep } from "@/api/council";
 import type { Tree } from "@/api/workspaces";
 import { SeatAvatar } from "@/components/presence/seat-avatar";
 import { cn } from "@/lib/utils";
@@ -46,8 +46,10 @@ function seatIds(run: Run): string[] {
   return [...native, ...seen.filter((p) => !(PROVIDERS as string[]).includes(p))];
 }
 
-export function RunView({ run, tree }: { run: Run; tree: Tree | undefined }) {
+export function RunView({ run, tree, workspaceId }: { run: Run; tree: Tree | undefined; workspaceId: string }) {
   const active = isActive(run.status);
+  const stop = useStopRun(workspaceId);
+  const stopped = run.status === "failed" && run.error === STOPPED_MESSAGE;
   const outputs = run.status === "done" && tree
     ? OUTPUT_NAMES.map((name) => tree.files.filter((f) => f.kind === "blob" && f.name === name && f.folder_id === run.output_folder_id).sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0]).filter((f) => f !== undefined)
     : [];
@@ -71,11 +73,21 @@ export function RunView({ run, tree }: { run: Run; tree: Tree | undefined }) {
             <li className="ml-auto text-sm">
               {run.status === "done" && <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">Done</span>}
               {run.status === "capped" && <span className="rounded-full bg-warning/20 px-2 py-0.5 text-xs font-medium text-warning">Stopped at the cap</span>}
-              {run.status === "failed" && <span className="rounded-full bg-danger/15 px-2 py-0.5 text-xs font-medium text-danger">Failed</span>}
-              {active && <span className="text-xs text-ink-3">{run.status === "queued" ? "Starting" : "Working"}…</span>}
+              {run.status === "failed" && !stopped && <span className="rounded-full bg-danger/15 px-2 py-0.5 text-xs font-medium text-danger">Failed</span>}
+              {stopped && <span className="rounded-full bg-warning/20 px-2 py-0.5 text-xs font-medium text-warning">Stopped</span>}
+              {active && (
+                <span className="flex items-center gap-3">
+                  <span className="text-xs text-ink-3">{run.status === "queued" ? "Starting" : "Working"}…</span>
+                  <button type="button" onClick={() => stop.mutate(run.id)} disabled={stop.isPending} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-ink hover:bg-raised disabled:opacity-60">
+                    <Square className="size-3" aria-hidden />{stop.isPending ? "Stopping…" : "Stop"}
+                  </button>
+                </span>
+              )}
             </li>
           </ol>
-          {run.error && <p role="alert" className="mt-3 text-sm text-danger">{run.error}</p>}
+          {run.error && !stopped && <p role="alert" className="mt-3 text-sm text-danger">{run.error}</p>}
+          {stopped && <p className="mt-3 text-sm text-ink-2">You stopped this run. Steps that finished are listed below and were charged; calls still in flight were dropped. No files were written.</p>}
+          {stop.isError && <p role="alert" className="mt-3 text-sm text-danger">{stop.error instanceof Error ? stop.error.message : "Could not stop the run."}</p>}
           {run.status === "capped" && <p className="mt-3 text-sm text-ink-2">The run stopped before a step that could have gone over your cap. Whatever finished was saved.</p>}
           <dl className="mt-4 grid gap-3 sm:grid-cols-2">
             <div><dt className="flex justify-between text-xs text-ink-3"><span>Tokens</span><span>{run.tokens_used.toLocaleString()} / {run.token_cap.toLocaleString()}</span></dt><dd><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-raised" role="img" aria-label={`${tokenShare}% of the token cap`}><div className="h-full rounded-full bg-azure" style={{ width: `${tokenShare}%` }} /></div></dd></div>

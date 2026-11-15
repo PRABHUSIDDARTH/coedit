@@ -52,7 +52,7 @@ Docs and sheets live in `files` (kind doc/sheet) with content in `doc_states`. B
 | `POST /files/{id}/ws-ticket` → `{ticket, url, read_only}` | viewer |
 | `GET /settings/keys` (provider + last4 only) · `PUT/DELETE /settings/keys/{provider}` | user (own keys) |
 | `POST /workspaces/{id}/council/models` (models a preset/base URL offers; also "Test connection") | owner |
-| `POST /workspaces/{id}/council/runs` · `GET /council/runs/{id}` (status, steps meta, spend) | owner |
+| `POST /workspaces/{id}/council/runs` · `GET /council/runs/{id}` (status, steps meta, spend) · `POST /council/runs/{id}/cancel` (stops an active run; stored as `failed`, error "Stopped by the owner.", no migration) | owner |
 
 ## Sync design
 - **Choice: Hocuspocus Node sidecar** (not pycrdt-websocket). Reason: it is the reference server for TipTap's Collaboration extension, so wire protocol and awareness/carets work out of the box; it has first-class `onAuthenticate`, per-connection `readOnly`, and a Database extension with `fetch/store` hooks; it is widely deployed. pycrdt-websocket would keep one language but its auth, read-only enforcement and persistence would be hand-rolled — too much risk for 6 hours. Cost: one extra Node service (~80 LOC).

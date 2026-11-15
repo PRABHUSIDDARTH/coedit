@@ -119,7 +119,7 @@ sessions, so you can sign in as a different user in each. Two browsers also work
   evaluated in each browser by HyperFormula. Import/export run in the browser.
 - **Uploads** are streamed to disk under the hash of their bytes, limited to 50 MB, versioned,
   and only ever served as downloads (`attachment`, `application/octet-stream`, `nosniff`).
-- **Council**: three drafts in parallel → each critiques the other two → one synthesis →
+- **Council**: (the owner can press **Stop** while a run is active: in-flight calls are dropped and uncharged, finished steps keep their cost, no files are written, the run ends as `failed` with "Stopped by the owner."; it cannot be stopped once it is writing its files) three drafts in parallel → each critiques the other two → one synthesis →
   files. Before each stage the whole stage's worst case is checked against the token and cost
   caps; a run that would exceed them stops as `capped`. Server maximum per run: 200k tokens / $5.
   Briefs and model outputs are passed to models only inside `<untrusted_source>` blocks.
@@ -256,7 +256,7 @@ against the running stack (it creates `smoke-*@example.com` users).
 | Server-side logout | Logout clears the cookie; the 7-day session token is not revoked on the server. |
 | Cloud deploy, Google sign-in, share links, slides, PDF/docx/xlsx | Out of scope. |
 | Sheet niceties (formatting, copy/paste ranges, more than 26×100) | Out of scope for the slice. |
-| Drag-and-drop moves, workspace rename/delete, profile editing, upload progress, cancelling a council run | Not built; the API supports moving files and folders. |
+| Drag-and-drop moves, workspace rename/delete, profile editing, upload progress | Not built; the API supports moving files and folders. |
 | Garbage collection of blobs from deleted files | Not built; deleted files are soft-deleted and their bytes stay on the volume. |
 
 Known rough edges: the whole sheet re-renders per keystroke (fine at this size); exported CSV does

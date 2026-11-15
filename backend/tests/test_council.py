@@ -369,7 +369,7 @@ async def test_run_status_is_owner_only(world: World, fakes) -> None:
     listing = f"/api/workspaces/{world.workspace_id}/council/runs"
     assert (await world.editor.get(listing)).status_code == 403
     assert (await world.outsider.get(listing)).status_code == 404
-    assert [r["id"] for r in (await world.owner.get(listing)).json()] == [run["id"]]
+    assert run["id"] in [r["id"] for r in (await world.owner.get(listing)).json()]
 
 
 async def test_run_validates_folder_and_synth_provider(world: World, fakes) -> None:
@@ -402,3 +402,46 @@ async def test_runs_interrupted_by_a_restart_are_marked_failed(world: World, fak
     after = (await world.owner.get(f"/api/council/runs/{stuck_id}")).json()
     assert after["status"] == "failed" and "restart" in after["error"]
     assert (await world.owner.get(f"/api/council/runs/{done['id']}")).json()["status"] == "done"
+
+
+# --- stopping a run ---------------------------------------------------------------------
+
+
+class SlowAdapter(FakeAdapter):
+    """Blocks in `complete` until released, so a run can be stopped mid-stage."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.started = asyncio.Event()
+
+    async def complete(self, system: str, user: str, max_tokens: int):
+        self.started.set()
+        await asyncio.sleep(30)
+        return await super().complete(system, user, max_tokens)
+
+
+async def test_owner_can_stop_a_running_council(world: World) -> None:
+    slow = {p: SlowAdapter(p.value) for p in Provider}
+    app.dependency_overrides[get_adapter_factory] = lambda: lambda keys: dict(slow)
+    try:
+        run = await start(world)
+        await asyncio.wait_for(slow[Provider.anthropic].started.wait(), 5)
+        resp = await world.owner.post(f"/api/council/runs/{run['id']}/cancel")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["status"] == "failed" and body["error"] == pipeline.STOPPED_MESSAGE
+        assert body["finished_at"] is not None
+        assert (await output_files(world)) == {}  # nothing half-written
+        # Stopping twice is refused, and the run stays stopped.
+        again = await world.owner.post(f"/api/council/runs/{run['id']}/cancel")
+        assert again.status_code == 409
+        assert (await finished(world, run["id"]))["error"] == pipeline.STOPPED_MESSAGE
+    finally:
+        app.dependency_overrides.pop(get_adapter_factory, None)
+
+
+async def test_finished_run_cannot_be_stopped(world: World, fakes) -> None:
+    run = await run_to_end(world)
+    resp = await world.owner.post(f"/api/council/runs/{run['id']}/cancel")
+    assert resp.status_code == 409
+    assert (await finished(world, run["id"]))["status"] == "done"

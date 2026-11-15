@@ -30,7 +30,10 @@ MAX_TOKENS = {Stage.draft: 4000, Stage.critique: 3000, Stage.synthesis: 12000}
 MIN_OUTPUT_TOKENS = 200
 ACTIVE = (RunStatus.queued, RunStatus.drafting, RunStatus.critiquing, RunStatus.synthesizing)
 
-_tasks: set[asyncio.Task[None]] = set()  # strong references so running tasks are not collected
+# Strong references so running tasks are not collected; also how a run is found to stop it.
+_tasks: dict[uuid.UUID, asyncio.Task[None]] = {}
+_saving: set[uuid.UUID] = set()  # runs writing their output files: too late to stop
+STOPPED_MESSAGE = "Stopped by the owner."
 
 
 def seat_price(adapter: LLMAdapter) -> Price:
@@ -310,13 +313,20 @@ async def _run(run_id: uuid.UUID, adapters: dict[str, LLMAdapter]) -> None:
             run_id, RunStatus.failed, f"The synthesis output is missing {' and '.join(missing)}."
         )
         return
-    await _save_files(run, files)
+    _saving.add(run_id)
+    try:
+        await _save_files(run, files)
+    finally:
+        _saving.discard(run_id)
     await _set_status(run_id, RunStatus.done)
 
 
 async def run_council(run_id: uuid.UUID, adapters: dict[str, LLMAdapter]) -> None:
     try:
         await _run(run_id, adapters)
+    except asyncio.CancelledError:
+        # Calls still in flight are dropped and not charged; steps already stored stay.
+        await _set_status(run_id, RunStatus.failed, STOPPED_MESSAGE)
     except Exception as exc:  # noqa: BLE001
         logger.error("council run %s crashed: %s", run_id, type(exc).__name__)
         await _set_status(run_id, RunStatus.failed, f"Internal error ({type(exc).__name__}).")
@@ -324,8 +334,17 @@ async def run_council(run_id: uuid.UUID, adapters: dict[str, LLMAdapter]) -> Non
 
 def launch(run_id: uuid.UUID, adapters: dict[str, LLMAdapter]) -> None:
     task = asyncio.create_task(run_council(run_id, adapters), name=f"council-{run_id}")
-    _tasks.add(task)
-    task.add_done_callback(_tasks.discard)
+    _tasks[run_id] = task
+    task.add_done_callback(lambda _t: _tasks.pop(run_id, None))
+
+
+def cancel(run_id: uuid.UUID) -> asyncio.Task[None] | None:
+    """Ask a running council to stop. None when it is not running here or is already saving."""
+    task = _tasks.get(run_id)
+    if task is None or task.done() or run_id in _saving:
+        return None
+    task.cancel()
+    return task
 
 
 async def fail_interrupted_runs() -> int:

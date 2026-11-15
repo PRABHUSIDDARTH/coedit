@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from collections.abc import Callable
 from datetime import datetime
@@ -335,6 +336,27 @@ async def list_runs(workspace_id: uuid.UUID, user: CurrentUser, db: DbSession) -
         .limit(10)
     )
     return [RunOut.model_validate(run) for run in runs]
+
+
+@router.post("/council/runs/{run_id}/cancel", response_model=RunOut)
+async def cancel_run(run_id: uuid.UUID, user: CurrentUser, db: DbSession) -> RunOut:
+    """Stop a running council. Steps that already finished keep their cost; the run ends as
+    `failed` with the message STOPPED_MESSAGE."""
+    run = await db.get(CouncilRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    await require_role(db, user, run.workspace_id, Role.owner)
+    if run.status not in pipeline.ACTIVE:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This run has already finished.")
+    task = pipeline.cancel(run_id)
+    if task is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This run cannot be stopped now: it is saving its files or is not running.",
+        )
+    await asyncio.wait({task}, timeout=5)
+    await db.refresh(run)
+    return await _run_out(db, run)
 
 
 @router.get("/council/runs/{run_id}", response_model=RunOut)

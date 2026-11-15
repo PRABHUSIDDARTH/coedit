@@ -122,7 +122,7 @@ export default function CouncilPage() {
         {runs.isError && <ErrorState title="Runs didn't load" error={runs.error} onRetry={() => runs.refetch()} />}
         {!runId && !runs.isPending && <EmptyState icon={Sparkles} className="py-24" title="No runs yet" body="Write a brief on the left and run the Council. You'll see each model's steps, tokens and spend as it goes." />}
         {run.isError && <ErrorState title="This run didn't load" error={run.error} onRetry={() => run.refetch()} />}
-        {run.data && <RunView run={run.data} tree={tree.data} />}
+        {run.data && <RunView run={run.data} tree={tree.data} workspaceId={current.id} />}
         {runs.data && runs.data.length > 1 && (
           <div>
             <h3 className="mb-2 text-xs font-medium text-ink-3">Earlier runs</h3>

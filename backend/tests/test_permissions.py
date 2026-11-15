@@ -35,6 +35,7 @@ MUTATING: list[tuple[str, str, dict | None, str]] = [
         "owner",
     ),
     ("POST", "/api/workspaces/{workspace_id}/council/models", {"preset": "groq"}, "owner"),
+    ("POST", "/api/council/runs/{run_id}/cancel", None, "owner"),
 ]
 
 
