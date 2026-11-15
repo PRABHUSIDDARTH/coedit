@@ -21,3 +21,6 @@ data/
 .vscode/
 .idea/
 .DS_Store
+
+# the runtime data/ rule above must not hide source code
+!frontend-next/src/lib/data/
