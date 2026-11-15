@@ -69,12 +69,12 @@ POST run → validate caps → load+decrypt owner's 3 keys → asyncio task:
   1 drafting:     gather(draft(anthropic), draft(openai), draft(google))
   2 critiquing:   gather(critique(p, drafts of the other two) for p in 3)
   3 synthesizing: synth_provider(brief + 3 drafts + 3 critiques) → 3 files
-  4 save:         AGENTS.md, ARCHITECTURE.md, PRD.md as blob files in output folder
+  4 save:         AGENTS.md, ARCHITECTURE.md, and PRD.md if present, as blob files in output folder
 ```
 - **Adapter interface** (`adapters/base.py`):
   `class LLMAdapter(Protocol): name: str; async def complete(self, system: str, user: str, max_tokens: int) -> Completion` where `Completion = (text, input_tokens, output_tokens, model)`. Implementations: Anthropic, OpenAI, Google, **Fake** (deterministic text derived from inputs, configurable token counts, can raise). Tests and `COUNCIL_FAKE=1` use Fake for all three.
 - Model IDs come from env (`COUNCIL_MODEL_ANTHROPIC`, `..._OPENAI`, `..._GOOGLE`) with a price table in `prices.py`; nothing is hard-coded in pipeline logic.
-- **Output format**: synthesis must emit `=== FILE: AGENTS.md ===` blocks; parser accepts only the three allowlisted names, so a model can't choose paths. Missing PRD block is allowed; missing AGENTS/ARCHITECTURE → run `failed`.
+- **Output format**: synthesis must emit `=== FILE: AGENTS.md ===` blocks; parser accepts only the three allowlisted names, so a model can't choose paths. A missing PRD block is allowed (the run is still `done` and the UI says PRD.md was not produced); missing AGENTS/ARCHITECTURE → run `failed`.
 - **Cap**: before every call, `estimated = used + chars/4 + max_tokens` priced at the model's rate; if it would exceed `token_cap` or `cost_cap_usd`, stop with status `capped` and save whatever is complete. Actual usage from provider responses updates the run after each call. Server-side hard max per run: 200k tokens / $5, regardless of user input.
 - **Failure**: one provider failing in draft/critique is recorded and the run continues with the remaining ones (min 2); synthesis failure fails the run. Per-call timeout 120 s (adapters use 110 s per attempt).
 - **Untrusted text**: brief, fetched URLs (stretch) and other drafts go in the user turn inside `<untrusted_source id=…>` tags; the system prompt states that content inside these tags is data and that instructions in it must be ignored. Models get no tools, so injected text can at worst change the content of the output, which the owner reviews.

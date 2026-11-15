@@ -2,7 +2,7 @@
 
 A small-team workspace: co-edit docs and sheets live, keep other files with versions, and
 ask an "AI council" to turn a brief into a Handoff Pack (`AGENTS.md`, `ARCHITECTURE.md`,
-`PRD.md`) using your own API keys.
+and `PRD.md` when the writing model includes it; PRD is optional) using your own API keys.
 
 This is a demo slice, not a finished product. **Verification status** (read this first):
 

@@ -35,7 +35,7 @@ export function Tour() {
         points={["Shapes, arrows and free drawing (Excalidraw)", "Preview: sample data, no backend", "Not yet a live shared canvas"]}>
         <CanvasDemo />
       </Row>
-      <Row flip id="council" title="Ask several minds at once." body="Run several model seats on a brief. They draft, critique each other and one writes the result to AGENTS.md, ARCHITECTURE.md and PRD.md files in a folder you choose."
+      <Row flip id="council" title="Ask several minds at once." body="Run several model seats on a brief. They draft, critique each other and one writes the result to AGENTS.md and ARCHITECTURE.md files (and PRD.md when the writing model includes it) in a folder you choose."
         points={["Seats are providers you configure (Anthropic, OpenAI, Google, OpenAI-compatible)", "Per-run token and cost caps, with progress and spend shown", "Output is saved as files; the example on the left is illustrative"]}>
         <CouncilDemo />
       </Row>

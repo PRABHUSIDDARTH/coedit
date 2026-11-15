@@ -76,7 +76,7 @@ export default function CouncilPage() {
       <section aria-label="Ask the Council" className="space-y-6 border-b border-border p-5 xl:border-b-0 xl:border-r xl:p-6">
         <div>
           <h2 className="font-display text-xl font-semibold tracking-tight text-ink">Ask the Council</h2>
-          <p className="mt-1 text-sm text-ink-2">Describe what you want to build. Three models draft and critique each other, then one writes the handoff pack: AGENTS.md, ARCHITECTURE.md and PRD.md.</p>
+          <p className="mt-1 text-sm text-ink-2">Describe what you want to build. Three models draft and critique each other, then one writes the handoff pack: AGENTS.md and ARCHITECTURE.md, plus PRD.md when the writing model includes it (it is optional).</p>
         </div>
 
         <form onSubmit={submit} className="space-y-4">

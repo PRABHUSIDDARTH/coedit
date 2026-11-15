@@ -445,3 +445,11 @@ async def test_finished_run_cannot_be_stopped(world: World, fakes) -> None:
     resp = await world.owner.post(f"/api/council/runs/{run['id']}/cancel")
     assert resp.status_code == 409
     assert (await finished(world, run["id"]))["status"] == "done"
+
+
+async def test_pack_without_prd_is_done_with_two_files(world: World, fakes) -> None:
+    """PRD.md is optional: a synthesis with no PRD block ends `done` with AGENTS + ARCHITECTURE only."""
+    fakes[Provider.anthropic].synthesis_text = "=== FILE: AGENTS.md ===\n# A\n=== FILE: ARCHITECTURE.md ===\n# B\n"
+    run = await run_to_end(world)
+    assert run["status"] == "done"
+    assert set(await output_files(world)) == {"AGENTS.md", "ARCHITECTURE.md"}

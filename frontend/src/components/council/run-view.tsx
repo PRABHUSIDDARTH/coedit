@@ -1,5 +1,6 @@
 "use client";
 
+import { OUTPUT_NAMES, missingOptional } from "./outputs";
 import { AlertTriangle, Check, FileText, Loader2, Square } from "lucide-react";
 import Link from "next/link";
 import { isActive, PROVIDERS, seatLabel, STOPPED_MESSAGE, useStopRun, type Run, type RunStep } from "@/api/council";
@@ -7,7 +8,6 @@ import type { Tree } from "@/api/workspaces";
 import { SeatAvatar } from "@/components/presence/seat-avatar";
 import { cn } from "@/lib/utils";
 
-const OUTPUT_NAMES = ["AGENTS.md", "ARCHITECTURE.md", "PRD.md"];
 const STAGES = [{ key: "draft", label: "Drafts", active: "drafting" }, { key: "critique", label: "Critiques", active: "critiquing" }, { key: "synthesis", label: "Synthesis", active: "synthesizing" }] as const;
 const STAGE_LABEL = { draft: "Draft", critique: "Critique", synthesis: "Synthesis" } as const;
 
@@ -116,6 +116,7 @@ export function RunView({ run, tree, workspaceId }: { run: Run; tree: Tree | und
       {run.status === "done" && (
         <section aria-label="Output files" className="rounded-xl border border-border bg-panel p-4">
           <h3 className="mb-2 text-sm font-semibold text-ink">Handoff pack</h3>
+          {outputs.length > 0 && run.status === "done" && missingOptional(outputs.map((f) => f.name)).length > 0 && <p className="mb-1 text-xs text-ink-3">{missingOptional(outputs.map((f) => f.name)).join(", ")} was not produced: the writing model did not include it (it is optional).</p>}
           {outputs.length === 0 ? <p className="text-sm text-ink-3">The files are saved in the output folder.</p> : (
             <ul className="space-y-1">{outputs.map((f) => <li key={f.id}><Link href={`/app/file/${f.id}`} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-raised"><FileText className="size-4 text-ink-3" aria-hidden />{f.name}</Link></li>)}</ul>
           )}
