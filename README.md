@@ -8,6 +8,23 @@ This is a demo slice, not a finished product. What works, what was cut and what 
 never verified is listed honestly at the bottom. Licence: GPL-3.0-or-later (required by
 HyperFormula).
 
+## Stack
+
+| Part | Choice |
+|---|---|
+| Web | Next.js 16 (App Router), React 19, TypeScript, Tailwind v4, shadcn/ui, next-themes, TanStack Query, Zustand, TipTap v3 (MIT extensions only), Yjs + `@hocuspocus/provider`, HyperFormula, Excalidraw, pnpm |
+| API | Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, Pydantic v2 |
+| Sync | Node 22, Hocuspocus server, Postgres persistence |
+| Data | Postgres 16; uploaded files on a local volume, addressed by sha256 |
+| AI | Official `anthropic`, `openai` and `google-genai` SDKs behind one adapter interface |
+
+## What works against the real backend
+
+Sign-up and login, workspaces with owner/editor/viewer roles, the file tree (folders, rename,
+delete, import, upload), live-collaborative docs and sheets with cursors and presence, file
+uploads with versions and download, members, per-user provider keys, and the AI Council.
+Canvas and the admin console are labelled **Preview** and use sample data (see the table at the bottom).
+
 ## Setup
 
 Needs Docker with Compose. Nothing else for running; Node 22 and `uv` only for development.
@@ -35,6 +52,8 @@ Useful switches in `.env`:
 | `COUNCIL_MODEL_ANTHROPIC` / `_OPENAI` / `_GOOGLE` | Model per live provider (defaults `claude-sonnet-5-5`, `gpt-6.1-terra`, `gemini-3.8-flash`). Each must have a price in `backend/app/council/prices.py` or in `COUNCIL_PRICES`, or the run refuses to start. |
 | `COUNCIL_PRICES` | JSON `{"model-id": [input_usd_per_mtok, output_usd_per_mtok]}` to add or override prices. |
 | `DB_PORT` | Host port for Postgres (default 5433, because 5432 is often taken). |
+| `API_TARGET` | Where the Next server proxies `/api` (read at runtime; Compose sets `http://api:8000`; default for local dev `http://localhost:8000`). |
+| `NEXT_PUBLIC_SYNC_URL` | Overrides the sync WebSocket address. Baked in at build time; empty means unset. By default the browser connects to port 1234 on the page's own host. |
 
 Two users in one browser: `http://localhost:5173` and `http://127.0.0.1:5173` keep separate
 sessions, so you can sign in as a different user in each. Two browsers also work.
@@ -56,6 +75,7 @@ sessions, so you can sign in as a different user in each. Two browsers also work
                                          └──► Postgres      (doc_states table only)
 ```
 
+- **Frontend routes**: `/` landing, `/login`, `/signup`, `/app/*` (doc, sheet, file, council, settings, canvas preview) and `/admin/*` (preview). `/api/*` is a streaming proxy route in the Next server; it forwards cookies and the CSRF header and streams 50 MB uploads. Next cannot proxy WebSockets, so the browser reaches the sync server directly on `:1234`: if you deploy behind a reverse proxy, expose that port or route `/sync` yourself and set `NEXT_PUBLIC_SYNC_URL`.
 - **Roles** live on the workspace: owner, editor, viewer. Every API route checks the caller's
   role (`require_role`): non-members get 404, too-low roles get 403.
 - **Live editing**: the browser asks the API for a ticket (`POST /api/files/{id}/ws-ticket`).
@@ -97,11 +117,15 @@ provider key in the council panel (one key is enough; the others take part as de
 ## Development
 
 ```bash
-make dev        # db in Docker; api, sync and web on the host with reload
+make dev        # db in Docker; api, sync and web (next dev) on the host with reload
 make test       # backend pytest + sync node tests + frontend vitest
 make lint       # ruff, eslint, tsc
 make licences   # fails on non-allowlisted production JS licences or any @tiptap-pro package
 ```
+
+The web app lives in `frontend/` and uses pnpm. `pnpm dev` and `pnpm build` run Next with
+webpack, because Turbopack cannot resolve packages on an NTFS checkout. After frontend edits,
+the Docker `web` service needs `docker compose up -d --build web`.
 
 Backend tests use their own database (`coedit_test`), sync tests another (`coedit_sync_test`);
 neither touches your data. `cd sync && npx tsx scripts/smoke.ts` runs an end-to-end check
@@ -116,7 +140,7 @@ against the running stack (it creates `smoke-*@example.com` users).
 | **Canvas and the admin console are previews.** They run on sample data (and simulated collaborators) and carry a "Preview" label. | No backend exists for either yet. Docs, sheets, files, members, keys and the Council use the real API. |
 | The Council shows each provider's steps, tokens and spend, but not the models' text as it streams. | The API reports run steps and writes the result to files; the text of each draft is not exposed. |
 | Council research from URLs (server-side fetch with SSRF guard) | Not built. |
-| Playwright end-to-end tests | Stretch. UI was checked by hand in Chrome; logic is covered by unit and API tests. |
+| Playwright end-to-end tests | Stretch. Logic is covered by unit and API tests. The UI was checked by hand in Chrome for sign-up, docs, sheets, upload and the Council; sync with a second user was checked with a scripted peer, and the viewer view, share/members dialogs, rename/delete dialogs and import were not exercised in a browser. |
 | Live revocation of open editing sessions | Role is checked when a ticket is issued. A removed member keeps an already-open socket until it reconnects (tickets last 60 s). |
 | Server-side logout | Logout clears the cookie; the 7-day session token is not revoked on the server. |
 | Cloud deploy, Google sign-in, share links, slides, PDF/docx/xlsx | Out of scope. |
