@@ -329,6 +329,7 @@ async def _run_out(db: AsyncSession, run: CouncilRun) -> RunOut:
 @router.get("/workspaces/{workspace_id}/council/runs", response_model=list[RunOut])
 async def list_runs(workspace_id: uuid.UUID, user: CurrentUser, db: DbSession) -> list[RunOut]:
     await require_role(db, user, workspace_id, Role.owner)
+    await pipeline.fail_stale_runs(db)
     runs = await db.scalars(
         select(CouncilRun)
         .where(CouncilRun.workspace_id == workspace_id)
@@ -365,4 +366,6 @@ async def get_run(run_id: uuid.UUID, user: CurrentUser, db: DbSession) -> RunOut
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     await require_role(db, user, run.workspace_id, Role.owner)
+    if await pipeline.fail_stale_runs(db):
+        await db.refresh(run)
     return await _run_out(db, run)

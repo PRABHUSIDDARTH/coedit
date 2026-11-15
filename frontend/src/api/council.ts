@@ -121,6 +121,9 @@ export function useRuns(workspaceId: string) {
   return useQuery({
     queryKey: ["runs", workspaceId],
     queryFn: () => api<Run[]>(`/workspaces/${workspaceId}/council/runs`),
+    // The list is a cache of the same rows the open run polls: keep it moving while any run is active,
+    // or a finished run stays "drafting" here until a reload.
+    refetchInterval: (query) => (query.state.data?.some((r) => isActive(r.status)) ? 2000 : false),
   });
 }
 

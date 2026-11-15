@@ -5,6 +5,7 @@ import base64
 import logging
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -402,6 +403,31 @@ async def test_runs_interrupted_by_a_restart_are_marked_failed(world: World, fak
     after = (await world.owner.get(f"/api/council/runs/{stuck_id}")).json()
     assert after["status"] == "failed" and "restart" in after["error"]
     assert (await world.owner.get(f"/api/council/runs/{done['id']}")).json()["status"] == "done"
+
+
+async def test_idle_active_runs_are_failed_but_recent_ones_are_not(world: World, fakes) -> None:
+    async def make(age_minutes: int) -> uuid.UUID:
+        async with SessionLocal() as db:
+            run = CouncilRun(
+                workspace_id=uuid.UUID(world.workspace_id),
+                created_by=uuid.UUID(world.users["owner"]["id"]),
+                brief="x",
+                synth_provider=Provider.anthropic,
+                status=RunStatus.drafting,
+                token_cap=1000,
+                cost_cap_usd=Decimal(1),
+                created_at=datetime.now(UTC) - timedelta(minutes=age_minutes),
+            )
+            db.add(run)
+            await db.commit()
+            return run.id
+
+    old, fresh = await make(60), await make(1)
+    listed = (await world.owner.get(f"/api/workspaces/{world.workspace_id}/council/runs")).json()
+    status = {r["id"]: r["status"] for r in listed}
+    assert status[str(old)] == "failed" and status[str(fresh)] == "drafting"
+    one = (await world.owner.get(f"/api/council/runs/{old}")).json()
+    assert one["status"] == "failed" and "No activity" in one["error"]
 
 
 # --- stopping a run ---------------------------------------------------------------------

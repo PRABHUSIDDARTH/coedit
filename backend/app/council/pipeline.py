@@ -8,9 +8,11 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
+from datetime import timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.council import prompts
 from app.council.adapters.base import Completion, LLMAdapter, ProviderError
@@ -345,6 +347,44 @@ def cancel(run_id: uuid.UUID) -> asyncio.Task[None] | None:
         return None
     task.cancel()
     return task
+
+
+# Three stages of at most CALL_TIMEOUT_SECONDS each, plus saving, with margin.
+STALE_AFTER = timedelta(minutes=10)
+
+
+async def fail_stale_runs(db: AsyncSession, max_idle: timedelta = STALE_AFTER) -> int:
+    """Mark active runs that no task in this process owns and that show no activity (creation or
+    a stored step) for `max_idle` as failed. Startup already fails every active run; this also
+    catches one orphaned while the server is up, so a list never shows it as running forever."""
+    cutoff = func.now() - max_idle
+    last_step = (
+        select(func.max(CouncilStep.created_at))
+        .where(CouncilStep.run_id == CouncilRun.id)
+        .scalar_subquery()
+    )
+    ids = (
+        await db.scalars(
+            select(CouncilRun.id).where(
+                CouncilRun.status.in_(ACTIVE),
+                CouncilRun.created_at < cutoff,
+                func.coalesce(last_step, CouncilRun.created_at) < cutoff,
+            )
+        )
+    ).all()
+    ids = [i for i in ids if i not in _tasks and i not in _saving]
+    if ids:
+        await db.execute(
+            update(CouncilRun)
+            .where(CouncilRun.id.in_(ids), CouncilRun.status.in_(ACTIVE))
+            .values(
+                status=RunStatus.failed,
+                error="No activity for too long; the run was marked failed.",
+                finished_at=func.now(),
+            )
+        )
+        await db.commit()
+    return len(ids)
 
 
 async def fail_interrupted_runs() -> int:
