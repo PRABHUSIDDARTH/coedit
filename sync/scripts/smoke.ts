@@ -9,6 +9,9 @@ import { HocuspocusProvider } from "@hocuspocus/provider";
 import * as Y from "yjs";
 
 const ORIGIN = process.env.ORIGIN ?? "http://localhost:5173";
+/** The API says "/sync" (a path); Next cannot proxy WebSockets, so go to the sync server directly. */
+const syncUrl = (u: string) => (/^[a-z][a-z0-9+.-]*:/i.test(u) ? u : (process.env.SYNC_URL ?? "ws://localhost:1234"));
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 class Session {
@@ -28,7 +31,7 @@ class Session {
 
 async function open(session: Session, fileId: string) {
   const t = await session.call<{ ticket: string; url: string; read_only: boolean }>("POST", `/files/${fileId}/ws-ticket`);
-  const url = new URL(t.url, ORIGIN.replace(/^http/, "ws")).toString();
+  const url = syncUrl(t.url);
   const doc = new Y.Doc();
   let synced = false;
   const provider = new HocuspocusProvider({ url, name: fileId, token: t.ticket, document: doc, onSynced: () => (synced = true) });

@@ -41,9 +41,10 @@ services:
   web:
     build: ./frontend
     environment:
+      # The Next server proxies /api here. The browser opens the sync WebSocket itself, on port 1234
+      # of the same host (the API tells it "/sync"; the app maps that to :1234).
       API_TARGET: http://api:8000
-      SYNC_TARGET: ws://sync:1234
-    ports: ["5173:5173"]
+    ports: ["5173:3000"]  # kept on 5173, the address everything else already uses
     depends_on: [api, sync]
 
 volumes:

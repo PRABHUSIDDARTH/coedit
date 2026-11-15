@@ -19,7 +19,7 @@ dev-api:
 dev-sync:
 	cd sync && npm run dev
 dev-web:
-	cd frontend && npm run dev
+	cd frontend && pnpm dev
 
 test: test-backend test-sync test-frontend
 test-backend: db
@@ -27,12 +27,12 @@ test-backend: db
 test-sync:
 	cd sync && npm test
 test-frontend:
-	cd frontend && npm test
+	cd frontend && pnpm test
 
 lint:
 	cd backend && uv run ruff check . && uv run ruff format --check .
 	cd sync && npx tsc --noEmit
-	cd frontend && npx eslint . && npx tsc --noEmit
+	cd frontend && pnpm lint && pnpm exec tsc --noEmit
 
 licences:
 	cd frontend && node scripts/check-licences.mjs

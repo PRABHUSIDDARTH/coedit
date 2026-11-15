@@ -45,7 +45,8 @@ async function user(email: string, name: string): Promise<Session> {
 /** Open a file's shared document, run `use` on it once loaded, and wait for any writes to be sent. */
 async function edit(session: Session, fileId: string, write: (doc: Y.Doc) => void): Promise<void> {
   const t = await session.call<{ ticket: string; url: string }>("POST", `/files/${fileId}/ws-ticket`);
-  const url = SYNC_URL ?? new URL(t.url, API.replace(/^http/, "ws")).toString();
+  // The API says "/sync" (a path); Next cannot proxy WebSockets, so go to the sync server directly.
+  const url = SYNC_URL ?? (/^[a-z][a-z0-9+.-]*:/i.test(t.url) ? t.url : "ws://localhost:1234");
   const doc = new Y.Doc();
   let synced = false;
   const provider = new HocuspocusProvider({ url, name: fileId, token: t.ticket, document: doc, onSynced: () => (synced = true) });
