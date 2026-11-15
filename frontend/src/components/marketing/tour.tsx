@@ -23,20 +23,20 @@ function Row({ id, title, body, points, flip, children }: { id: string; title: s
 export function Tour() {
   return (
     <>
-      <Row id="docs" title="Write with the whole team in the room." body="Cursors, comments and edits show up as they happen. Type a slash for blocks, tables and code, and ask the Council for a second opinion without leaving the page."
+      <Row id="docs" title="Write with the whole team in the room." body="Cursors, comments and edits show up as they happen. Type a slash for blocks, tables and code."
         points={["Live cursors with names, in a color that stays theirs", "Comments tied to the exact words they are about", "Tables, checklists and code blocks from the slash menu"]}>
         <DocDemo />
       </Row>
-      <Row flip id="sheets" title="Numbers that explain themselves." body="Formulas, typed columns and shared selections. When someone changes a cell, everyone sees the total move."
-        points={["Currency, percent, date and status columns", "A formula bar that shows what each cell is doing", "Collaborator selections in their own color"]}>
+      <Row flip id="sheets" title="Numbers that explain themselves." body="Formulas and shared selections. When someone changes a cell, everyone sees the total move."
+        points={["26 columns by 100 rows of raw cell text, no formatting", "A formula bar that shows what each cell is doing", "Collaborator selections in their own color"]}>
         <SheetDemo />
       </Row>
-      <Row id="canvas" title="Sketch the system before you write it down." body="A canvas next to your docs, with the same people and the same cursors. Draw the flow, then link it from the brief."
-        points={["Shapes, arrows and free drawing", "Everyone's pointer visible, never in your way", "Lives in the same workspace as your docs and sheets"]}>
+      <Row id="canvas" title="Sketch the system before you write it down." body="A canvas preview next to your docs. It runs on sample data with simulated collaborators and is not saved or shared yet."
+        points={["Shapes, arrows and free drawing (Excalidraw)", "Preview: sample data, no backend", "Not yet a live shared canvas"]}>
         <CanvasDemo />
       </Row>
-      <Row flip id="council" title="Ask several minds at once." body="Pick three to six seats, each with a role. They discuss in turn, then the Council hands back one answer you can insert straight into your doc."
-        points={["Seats like Analyst, Critic and Writer, each with their own color", "Watch the discussion as it happens", "One synthesized answer with where the seats agreed and split"]}>
+      <Row flip id="council" title="Ask several minds at once." body="Run several model seats on a brief. They draft, critique each other and one writes the result to AGENTS.md, ARCHITECTURE.md and PRD.md files in a folder you choose."
+        points={["Seats are providers you configure (Anthropic, OpenAI, Google, OpenAI-compatible)", "Per-run token and cost caps, with progress and spend shown", "Output is saved as files; the example on the left is illustrative"]}>
         <CouncilDemo />
       </Row>
     </>

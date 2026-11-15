@@ -4,8 +4,15 @@ A small-team workspace: co-edit docs and sheets live, keep other files with vers
 ask an "AI council" to turn a brief into a Handoff Pack (`AGENTS.md`, `ARCHITECTURE.md`,
 `PRD.md`) using your own API keys.
 
-This is a demo slice, not a finished product. What works, what was cut and what was
-never verified is listed honestly at the bottom. Licence: GPL-3.0-or-later (required by
+This is a demo slice, not a finished product. **Verification status** (read this first):
+
+- No LLM provider (Anthropic, OpenAI, Google, Groq, NVIDIA NIM, Ollama) has been run against its real API. The adapters were tested against local stub servers only. Council runs so far used demo (fake) seats or those stubs.
+- Canvas and the admin console run on sample data and are labelled Preview.
+- The NexusCloud storage backend was tested against a stub only and is off by default (`STORAGE_BACKEND=local`).
+- The viewer-role UI, the Share/Members dialogs, import and two-user sync were checked by scripts, the API, a scripted second peer and browser automation only. No person has yet clicked through them in two real browsers.
+- Nothing here makes any claim about the quality of multi-model council output; it has not been measured.
+
+What works, what was cut and what was never verified is listed at the bottom. Licence: GPL-3.0-or-later (required by
 HyperFormula).
 
 ## Stack
@@ -22,7 +29,7 @@ HyperFormula).
 
 Sign-up and login, workspaces with owner/editor/viewer roles, the file tree (folders, rename,
 delete, import, upload), live-collaborative docs and sheets with cursors and presence, file
-uploads with versions and download, members, per-user provider keys, and the AI Council.
+uploads with versions and download, members, per-user provider keys, and the AI Council pipeline (exercised with demo seats and local stub servers, never with a real provider; see Verification status).
 Canvas and the admin console are labelled **Preview** and use sample data (see the table at the bottom).
 
 ## Setup
@@ -142,7 +149,7 @@ NEXUSCLOUD_BASE_URL=https://nexus.example.com
 NEXUSCLOUD_TOKEN=nct_...          # created in NexusCloud: POST /api/v1/auth/service-tokens
 ```
 
-- **Status: tested only against a stub** (`backend/tests/test_nexuscloud_backend.py`). It has never
+- **Status: tested only against a stub, and not enabled by default** (`backend/tests/test_nexuscloud_backend.py`). It has never
   been run against a real NexusCloud deployment or a real cloud bucket, and needs the NexusCloud
   `service-tokens` branch, which is not in a released version.
 - Default is `local`; with no NexusCloud settings Coedit behaves exactly as before. Each version
@@ -155,7 +162,7 @@ NEXUSCLOUD_TOKEN=nct_...          # created in NexusCloud: POST /api/v1/auth/ser
 - Limits: each upload is held in memory/temp disk (max 50 MB) while its size and hash are taken,
   because NexusCloud needs the size up front. Delete is implemented but Coedit never deletes
   stored versions (as today); it is used only to clean up an upload whose database write failed.
-  Downloads are streamed through the API (no Range/ETag, unlike local files).
+  Downloads are streamed through Coedit (the API fetches from NexusCloud and relays the bytes), so Range requests and ETag/conditional requests are not supported on this backend. Local downloads use Starlette's `FileResponse`; Range/ETag behaviour there has no test of its own.
   Exports are generated in the browser and large Yjs snapshots live in Postgres (`doc_states`);
   neither goes through the storage backend.
 
@@ -216,12 +223,12 @@ against the running stack (it creates `smoke-*@example.com` users).
 
 | Cut or limited | Why |
 |---|---|
-| **No council provider has been run against its real API, including Groq, NVIDIA NIM and Ollama.** The Anthropic, OpenAI and Google adapters use the official SDKs and the OpenAI-compatible adapter uses the OpenAI SDK; all are tested against local stubs of each API (one contract suite; the Groq, NIM and Ollama stubs mimic those servers' reply shapes from their documented behaviour, not from recorded traffic), never the real services. For the compatible providers the model list, `max_tokens` spelling, usage fields and Ollama's `/api/tags` fallback are the likeliest to differ from the stubs. Model ids and prices were read from the vendors' pricing pages on 2026-11-15 and not otherwise verified; reasoning-effort/thinking parameters in particular may need adjusting for a given model. | The builder had no keys, and automated tests never call real APIs. First live run: use a small cap. |
+| **No council provider has been run against its real API, including Groq, NVIDIA NIM and Ollama.** The Anthropic, OpenAI and Google adapters use the official SDKs and the OpenAI-compatible adapter uses the OpenAI SDK; all are tested against local stubs of each API (one contract suite; the Groq, NIM and Ollama stubs mimic those servers' reply shapes from their documented behaviour, not from recorded traffic), never the real services. For the compatible providers the model list, `max_tokens` spelling, usage fields and Ollama's `/api/tags` fallback are the likeliest to differ from the stubs. Model ids and prices were entered from the vendors' pricing pages on 2026-11-15 (per the build notes) and have not been checked against a live API; reasoning-effort/thinking parameters in particular may need adjusting for a given model. | The builder had no keys, and automated tests never call real APIs. First live run: use a small cap. |
 | A provider without a key takes part as a **demo seat** (canned text, labelled "demo" in the panel). | Lets one key be enough to try the flow. |
 | **Canvas and the admin console are previews.** They run on sample data (and simulated collaborators) and carry a "Preview" label. | No backend exists for either yet. Docs, sheets, files, members, keys and the Council use the real API. |
 | The Council shows each provider's steps, tokens and spend, but not the models' text as it streams. | The API reports run steps and writes the result to files; the text of each draft is not exposed. |
 | Council research from URLs (server-side fetch with SSRF guard) | Not built. |
-| Playwright end-to-end tests | Stretch. Logic is covered by unit and API tests. The UI was checked by hand in Chrome for sign-up, docs, sheets, upload and the Council; sync with a second user was checked with a scripted peer, and the viewer view, share/members dialogs, rename/delete dialogs and import were not exercised in a browser. |
+| Playwright end-to-end tests | Stretch. Logic is covered by unit and API tests. UI checks were done with browser automation in one Chrome profile, plus scripts: sign-up, docs, sheets, upload and the Council with demo seats. Sync with a second user used a scripted peer (`sync/scripts/peer.ts`), not a second real browser. The viewer UI, the Share/Members dialogs, rename/delete dialogs and import were checked by script or API only (some import steps were driven by automation through hidden file inputs). The new OpenAI-compatible seat editor was not clicked through at all. |
 | Live revocation of open editing sessions | Role is checked when a ticket is issued. A removed member keeps an already-open socket until it reconnects (tickets last 60 s). |
 | Server-side logout | Logout clears the cookie; the 7-day session token is not revoked on the server. |
 | Cloud deploy, Google sign-in, share links, slides, PDF/docx/xlsx | Out of scope. |

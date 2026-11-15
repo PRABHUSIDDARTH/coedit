@@ -24,7 +24,7 @@ export function Hero() {
             <BlurText text="Write, calculate and think together." animateBy="words" trigger="load" delay={90} className="justify-start" />
           </h1>
           <p className="mt-6 max-w-[34rem] text-lg leading-relaxed text-ink-2">
-            Coedit is one workspace for docs, sheets and a canvas. When you are stuck, ask the Council: several AI seats argue it out and hand back one answer.
+            Coedit is one workspace for docs, sheets and a canvas. The Council runs several AI seats on a brief and writes the result to files in your workspace. It has only been run with demo seats and local test servers, not yet with real providers.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Button asChild size="lg" className="h-11 bg-tidal px-5 text-base text-on-fill hover:opacity-90">
@@ -32,7 +32,7 @@ export function Hero() {
             </Button>
             <Button asChild variant="outline" size="lg" className="h-11 px-5 text-base"><a href="#council">See the Council</a></Button>
           </div>
-          <p className="mt-4 text-sm text-ink-3">Free for up to three people. No card needed.</p>
+          <p className="mt-4 text-sm text-ink-3">Demo build. No billing exists.</p>
         </div>
 
         <div className="relative lg:col-span-6" aria-label="Product preview">

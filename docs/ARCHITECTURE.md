@@ -1,8 +1,15 @@
 # Architecture — coedit
 
+## Verification status
+- No provider (Anthropic, OpenAI, Google, Groq, NVIDIA NIM, Ollama) has been run against a real API. Adapters are tested against local stub servers only; Groq/NIM/Ollama stub shapes come from documented behaviour, not recorded traffic.
+- Canvas and the admin console run on sample data (`frontend/src/mocks`) and are labelled Preview.
+- The NexusCloud backend is tested against a stub only and is off by default. Its downloads stream through the API and lose Range and ETag.
+- Viewer UI, Share/Members dialogs, import and two-user sync were checked by script, API or single-profile browser automation only, not by two real browsers.
+- Model ids and prices in `prices.py` were not checked against live APIs. No claim is made about multi-model output quality.
+
 ## Components
 ```
-browser (React/Vite :5173)
+browser (Next.js web app :5173; its server proxies /api)
   ├─ REST + cookie ──────────► api (FastAPI :8000) ──► Postgres :5432
   │                               │  └─► /data/blobs (volume)
   │                               └─► LLM providers (council, server-side only)
@@ -10,7 +17,7 @@ browser (React/Vite :5173)
 ```
 - **api**: auth, workspaces, folders, files, blob versions, WS tickets, settings (keys), council runs. The only component holding provider keys.
 - **sync**: Hocuspocus. Verifies a short-lived ticket on join, sets read-only for viewers, persists Yjs state to `doc_states`. Has no other DB access.
-- **web**: SPA. TipTap + Yjs for docs; HTML table + Y.Map + HyperFormula for sheets. Import/export runs client-side.
+- **web**: Next.js app (App Router). TipTap + Yjs for docs; HTML table + Y.Map + HyperFormula for sheets. Import/export runs client-side.
 - **db**: Postgres 16. **blobs**: behind `StorageBackend`: local volume (default, content-addressed) or NexusCloud (optional).
 
 ## Data model
@@ -69,7 +76,7 @@ POST run → validate caps → load+decrypt owner's 3 keys → asyncio task:
 - Model IDs come from env (`COUNCIL_MODEL_ANTHROPIC`, `..._OPENAI`, `..._GOOGLE`) with a price table in `prices.py`; nothing is hard-coded in pipeline logic.
 - **Output format**: synthesis must emit `=== FILE: AGENTS.md ===` blocks; parser accepts only the three allowlisted names, so a model can't choose paths. Missing PRD block is allowed; missing AGENTS/ARCHITECTURE → run `failed`.
 - **Cap**: before every call, `estimated = used + chars/4 + max_tokens` priced at the model's rate; if it would exceed `token_cap` or `cost_cap_usd`, stop with status `capped` and save whatever is complete. Actual usage from provider responses updates the run after each call. Server-side hard max per run: 200k tokens / $5, regardless of user input.
-- **Failure**: one provider failing in draft/critique is recorded and the run continues with the remaining ones (min 2); synthesis failure fails the run. Per-call timeout 120 s.
+- **Failure**: one provider failing in draft/critique is recorded and the run continues with the remaining ones (min 2); synthesis failure fails the run. Per-call timeout 120 s (adapters use 110 s per attempt).
 - **Untrusted text**: brief, fetched URLs (stretch) and other drafts go in the user turn inside `<untrusted_source id=…>` tags; the system prompt states that content inside these tags is data and that instructions in it must be ignored. Models get no tools, so injected text can at worst change the content of the output, which the owner reviews.
 - Runs as an in-process `asyncio` task (no queue). If the API restarts mid-run, the run is marked `failed` on startup.
 
@@ -115,6 +122,6 @@ POST run → validate caps → load+decrypt owner's 3 keys → asyncio task:
 | Workspace-level roles | Per-file ACLs/share links | Scope; link expiry is a non-goal. |
 | Cookie JWT, no sessions table | Server sessions | Fewer tables; logout clears cookie (no server revoke — known gap). |
 | `@tiptap/pm` and `@tiptap/y-tiptap` added to the web deps | — | Required peer dependencies of the TipTap packages above (both MIT); not optional. |
-| Slice 9 finish: real Anthropic, OpenAI (Chat Completions) and Google (`google-genai`) adapters; a provider without a key runs as FakeAdapter ("demo"). One contract suite runs against all three using local HTTP stubs. Google prices use the announced post-increase rates so caps never under-count; the google-genai SDK logger is silenced because it logs provider error bodies on retry | Stack table already lists `openai`, `google-genai` | The SDKs' own retry/backoff is used (1 retry, 110 s per attempt; pipeline deadline 120 s). Prices/model ids unverified against live APIs. |
+| Slice 9 finish: real Anthropic, OpenAI (Chat Completions) and Google (`google-genai`) adapters; a provider without a key runs as FakeAdapter ("demo"). One contract suite runs against all three using local HTTP stubs. Google prices were entered at what the build notes call the announced post-increase rates (not verified against billing); the google-genai SDK logger is silenced because it logs provider error bodies on retry | Stack table already lists `openai`, `google-genai` | The SDKs' own retry/backoff is used (1 retry, 110 s per attempt; pipeline deadline 120 s). Prices/model ids unverified against live APIs. |
 | Adapter tests use a local stub HTTP server, not respx | respx | `anthropic` ≥ 1.0 is built on httpx2, which respx does not intercept. |
 | No server-side model fallback on refusal for Claude calls | `fallbacks: "default"` | A fallback could answer from a differently priced model, which would break the per-run cost cap. A refusal is recorded as a failed step instead. |

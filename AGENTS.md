@@ -10,7 +10,7 @@ A vertical slice of a collaborative workspace, not the full vision: keep changes
 | Web | Next.js 16 (App Router) + React 19 + TypeScript, Tailwind v4, shadcn/ui, next-themes, TanStack Query, Zustand, TipTap v3 (MIT extensions only), `@hocuspocus/provider`, `yjs`, HyperFormula, Excalidraw (canvas preview), pnpm |
 | DB | Postgres 16 |
 | Blobs | `StorageBackend` (`services/storage.py`): local volume `/data/blobs` by default (content-addressed by sha256), optional NexusCloud (`STORAGE_BACKEND=nexuscloud`, stub-tested only) |
-| LLMs | `anthropic`, `openai`, `google-genai` SDKs behind one adapter interface |
+| LLMs | `anthropic`, `openai`, `google-genai` SDKs behind one adapter interface (no provider has been run against a real API; stubs only) |
 | Run | `docker compose` (db, api, sync, web) |
 | Licence | **GPL-3.0-or-later** for the whole repo (forced by HyperFormula) |
 
