@@ -146,7 +146,8 @@ class DocState(Base):
 
 
 class FileVersion(Base):
-    """One uploaded revision of a blob file; `storage_key` is the sha256 of its bytes."""
+    """One uploaded revision of a blob file. `storage_key` is the key in `storage_backend`:
+    the sha256 of the bytes for "local", NexusCloud's file id for "nexuscloud"."""
 
     __tablename__ = "file_versions"
     __table_args__ = (
@@ -157,6 +158,8 @@ class FileVersion(Base):
     file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"))
     version_no: Mapped[int]
     storage_key: Mapped[str] = mapped_column(Text)
+    storage_backend: Mapped[str] = mapped_column(Text, server_default="local")
+    sha256: Mapped[str] = mapped_column(Text)
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     mime: Mapped[str] = mapped_column(Text)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))

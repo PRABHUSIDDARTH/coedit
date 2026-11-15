@@ -59,10 +59,18 @@ def _host_port(url: str) -> tuple[str, str, int]:
 
 
 async def check_host(
-    host: str, port: int, *, allow_local: bool, preset_hosts: frozenset[str], resolver: Resolver
+    host: str,
+    port: int,
+    *,
+    allow_local: bool,
+    preset_hosts: frozenset[str],
+    resolver: Resolver,
+    any_host: bool = False,
 ) -> list[str]:
     """Return the addresses `host` may be reached at, or raise UnsafeURL."""
-    if not allow_local and host not in preset_hosts:
+    # any_host: the name is not restricted (e.g. cloud presigned URLs) but every address must
+    # still be public unless allow_local.
+    if not allow_local and not any_host and host not in preset_hosts:
         raise UnsafeURL(
             "That host is not an allowed provider. Use a preset, or ask the operator to allow "
             "local providers (COUNCIL_ALLOW_LOCAL_PROVIDERS=1)."
@@ -107,7 +115,9 @@ class GuardedTransport(httpx.AsyncBaseTransport):
         preset_hosts: frozenset[str] = frozenset(),
         resolver: Resolver = system_resolver,
         inner: httpx.AsyncBaseTransport | None = None,
+        any_host: bool = False,
     ) -> None:
+        self._any_host = any_host
         self._allow_local = allow_local
         self._preset_hosts = preset_hosts
         self._resolver = resolver
@@ -123,6 +133,7 @@ class GuardedTransport(httpx.AsyncBaseTransport):
                 allow_local=self._allow_local,
                 preset_hosts=self._preset_hosts,
                 resolver=self._resolver,
+                any_host=self._any_host,
             )
         except UnsafeURL as exc:
             raise httpx.ConnectError(str(exc), request=request) from None

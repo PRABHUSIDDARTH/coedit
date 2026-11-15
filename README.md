@@ -53,6 +53,7 @@ Useful switches in `.env`:
 | `COUNCIL_ALLOW_LOCAL_PROVIDERS=1` | Lets OpenAI-compatible seats use private / loopback / link-local addresses and hosts that are not presets (Ollama on this machine, a LAN server). **Off by default. Must stay off in any hosted or multi-user deployment** (see "OpenAI-compatible seats"). |
 | `COUNCIL_PROVIDER_PRESETS` | JSON `{"id": {"label": "...", "base_url": "https://.../v1", "needs_key": true}}`: extra OpenAI-compatible presets. Their hosts are allowed like Groq's. |
 | `COUNCIL_PRICES` | JSON `{"model-id": [input_usd_per_mtok, output_usd_per_mtok]}` to add or override prices. |
+| `STORAGE_BACKEND` | `local` (default: the `/data/blobs` volume) or `nexuscloud`. See "Optional: NexusCloud storage". |
 | `DB_PORT` | Host port for Postgres (default 5433, because 5432 is often taken). |
 | `API_TARGET` | Where the Next server proxies `/api` (read at runtime; Compose sets `http://api:8000`; default for local dev `http://localhost:8000`). |
 | `NEXT_PUBLIC_SYNC_URL` | Overrides the sync WebSocket address. Baked in at build time; empty means unset. By default the browser connects to port 1234 on the page's own host. |
@@ -70,6 +71,7 @@ sessions, so you can sign in as a different user in each. Two browsers also work
    │                                     │  uploads, WS tickets, key storage, council runs
    │                                     ├──► Postgres 16   (everything except blob bytes)
    │                                     ├──► /data/blobs   (volume, files named by sha256)
+   │                                     │    or NexusCloud (optional, STORAGE_BACKEND=nexuscloud)
    │                                     └──► LLM provider  (council only, server-side)
    │
    └── WebSocket :1234 + 60 s ticket ►  sync  Hocuspocus (Node) :1234
@@ -126,6 +128,36 @@ token cap. A seat without a price is refused with a message: the cost cap would 
    `docker-compose.yml` maps `host.docker.internal` to the host (`extra_hosts: host-gateway`), so the
    Ollama preset (`http://host.docker.internal:11434/v1`) works on Linux too.
 4. Add an Ollama seat, load models, set both prices to `0`, set a token cap.
+
+### Optional: NexusCloud storage (experimental)
+
+New file versions (uploads, new versions, council output) can be stored through a NexusCloud
+service token instead of the local volume. The API calls NexusCloud's REST API to get presigned
+URLs and moves the bytes to and from the user's own bucket; the returned key is stored with the
+version. Server-side only: nothing in the browser changes.
+
+```
+STORAGE_BACKEND=nexuscloud
+NEXUSCLOUD_BASE_URL=https://nexus.example.com
+NEXUSCLOUD_TOKEN=nct_...          # created in NexusCloud: POST /api/v1/auth/service-tokens
+```
+
+- **Status: tested only against a stub** (`backend/tests/test_nexuscloud_backend.py`). It has never
+  been run against a real NexusCloud deployment or a real cloud bucket, and needs the NexusCloud
+  `service-tokens` branch, which is not in a released version.
+- Default is `local`; with no NexusCloud settings Coedit behaves exactly as before. Each version
+  records which backend holds it, so switching the setting leaves older versions readable.
+- The token is sent only to `NEXUSCLOUD_BASE_URL`, never to the presigned URL, and is scrubbed from
+  logs. Errors from the backend are reduced to an HTTP status.
+- SSRF: the base URL and every presigned URL must be https with no credentials and resolve only to
+  public addresses; redirects are never followed. `NEXUSCLOUD_ALLOW_PRIVATE=1` relaxes this (http,
+  private/loopback) for a compose network or a stub. **Keep it off in any hosted deployment.**
+- Limits: each upload is held in memory/temp disk (max 50 MB) while its size and hash are taken,
+  because NexusCloud needs the size up front. Delete is implemented but Coedit never deletes
+  stored versions (as today); it is used only to clean up an upload whose database write failed.
+  Downloads are streamed through the API (no Range/ETag, unlike local files).
+  Exports are generated in the browser and large Yjs snapshots live in Postgres (`doc_states`);
+  neither goes through the storage backend.
 
 ### The SSRF flag, `COUNCIL_ALLOW_LOCAL_PROVIDERS`
 

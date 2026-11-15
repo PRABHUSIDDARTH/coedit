@@ -1,6 +1,7 @@
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,14 @@ class Settings(BaseSettings):
     sync_public_url: str = "/sync"
     blob_dir: str = "./data/blobs"
     max_upload_bytes: int = 50 * 1024 * 1024
+    # Where new blob versions are written. "local" (default) is the volume above; "nexuscloud"
+    # uses a NexusCloud service token to get presigned URLs (see docs/ARCHITECTURE.md).
+    storage_backend: Literal["local", "nexuscloud"] = "local"
+    nexuscloud_base_url: str = ""
+    nexuscloud_token: SecretStr = SecretStr("")
+    # Lets the NexusCloud API and the presigned URLs it returns be plain http / private or
+    # loopback addresses (a compose network, a stub). MUST stay off in any hosted deployment.
+    nexuscloud_allow_private: bool = False
 
     council_fake: bool = False
     council_model_anthropic: str = "claude-sonnet-5-5"
@@ -35,6 +44,16 @@ class Settings(BaseSettings):
     # preset (Ollama on this machine, a LAN vLLM). MUST stay off in any hosted deployment:
     # with it on, a user can make the API server call internal services.
     council_allow_local_providers: bool = False
+
+    @model_validator(mode="after")
+    def _nexuscloud_needs_settings(self) -> "Settings":
+        if self.storage_backend == "nexuscloud" and not (
+            self.nexuscloud_base_url.strip() and self.nexuscloud_token.get_secret_value()
+        ):
+            raise ValueError(
+                "STORAGE_BACKEND=nexuscloud needs NEXUSCLOUD_BASE_URL and NEXUSCLOUD_TOKEN"
+            )
+        return self
 
     @field_validator(
         "council_model_anthropic", "council_model_openai", "council_model_google", mode="before"

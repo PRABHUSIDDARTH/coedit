@@ -23,7 +23,7 @@ from app.routers.council import get_seat_factory
 from tests.conftest import World
 from tests.test_council import finished
 
-SECRET = "gsk_" + "TESTKEYTESTKEYTESTKEY1234567890"
+SECRET = "gsk_" + "TESTKEYTESTKEYTESTKEY1234567890"  # fake-secret-ok
 
 
 # --- tolerant parsing ----------------------------------------------------------------------

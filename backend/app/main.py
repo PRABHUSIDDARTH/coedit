@@ -14,6 +14,7 @@ from app.db import engine
 from app.deps import csrf_guard
 from app.middleware import BodySizeLimitMiddleware
 from app.routers import auth, blobs, council, files, folders, settings, tickets, workspaces
+from app.services import storage
 
 logging_redact.install()
 
@@ -21,6 +22,9 @@ logging_redact.install()
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await pipeline.fail_interrupted_runs()
+    if get_settings().storage_backend == "nexuscloud":
+        # Refuses to start on an unsafe NEXUSCLOUD_BASE_URL (SSRF policy in services/nexuscloud.py).
+        await storage.get_backend().check_config()  # type: ignore[attr-defined]
     yield
 
 

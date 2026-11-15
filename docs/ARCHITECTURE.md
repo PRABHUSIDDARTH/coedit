@@ -11,7 +11,7 @@ browser (React/Vite :5173)
 - **api**: auth, workspaces, folders, files, blob versions, WS tickets, settings (keys), council runs. The only component holding provider keys.
 - **sync**: Hocuspocus. Verifies a short-lived ticket on join, sets read-only for viewers, persists Yjs state to `doc_states`. Has no other DB access.
 - **web**: SPA. TipTap + Yjs for docs; HTML table + Y.Map + HyperFormula for sheets. Import/export runs client-side.
-- **db**: Postgres 16. **blobs**: local volume, content-addressed.
+- **db**: Postgres 16. **blobs**: behind `StorageBackend`: local volume (default, content-addressed) or NexusCloud (optional).
 
 ## Data model
 | Table | Columns |
@@ -21,7 +21,7 @@ browser (React/Vite :5173)
 | `memberships` | workspace_id → workspaces, user_id → users, role enum(owner, editor, viewer), created_at · pk(workspace_id, user_id) |
 | `folders` | id, workspace_id, parent_id → folders null, name, created_at · unique(workspace_id, parent_id, name) |
 | `files` | id, workspace_id, folder_id → folders null, name, kind enum(doc, sheet, blob), current_version int null, created_by, created_at, updated_at, deleted_at null |
-| `file_versions` | id, file_id → files, version_no int, storage_key text (sha256), size_bytes bigint, mime text, created_by, created_at · unique(file_id, version_no) |
+| `file_versions` | id, file_id → files, version_no int, storage_key text (sha256 for `local`, NexusCloud file id for `nexuscloud`), storage_backend text default `local`, sha256 text, size_bytes bigint, mime text, created_by, created_at · unique(file_id, version_no) |
 | `doc_states` | file_id pk → files, state bytea (Yjs update), updated_at — written only by sync |
 | `provider_keys` | id, user_id → users, provider enum(anthropic, openai, google), ciphertext bytea, nonce bytea, last4 text, created_at · unique(user_id, provider) |
 | `council_runs` | id, workspace_id, output_folder_id, created_by, brief text, synth_provider (text: a built-in provider or a custom seat id), status enum(queued, drafting, critiquing, synthesizing, done, failed, capped), token_cap int, cost_cap_usd numeric, tokens_used int, cost_usd numeric, error text null, created_at, finished_at |
@@ -83,6 +83,16 @@ POST run → validate caps → load+decrypt owner's 3 keys → asyncio task:
 - SSRF (`netguard.py`): see the README section. `validate_base_url` at acceptance; `GuardedTransport` on every request and redirect hop resolves, re-checks all addresses, then connects to the checked IP (Host header and SNI keep the name), so rebinding between check and use fails. Max 3 redirects. Policy: preset host or flag; any non-public address needs the flag. The same guarded client serves `GET /models`.
 - Model list: `GET {base}/models`, else Ollama's `{root}/api/tags`, else the UI falls back to manual entry. Only model ids are returned (max 500); provider bodies never are.
 
+## Storage backends
+
+`app/services/storage.py` defines `StorageBackend` (`put(stream, max_bytes) -> Stored(key, size, sha256, backend)`, `get(key) -> async byte iterator`, `delete(key)`, plus `shared_keys`). Callers: `routers/blobs.py` (uploads, new versions, downloads) and the council pipeline's output files, all through `storage.save_stream/save_bytes`, which write to `get_backend()` (the `STORAGE_BACKEND` setting). Downloads and cleanup look the backend up by the name recorded on the `file_versions` row (`backend_named`), so a setting change never strands existing versions. `storage.discard` removes an object whose DB row failed to commit, but only for backends whose keys are not shared (never for content-addressed `local`).
+
+- **local** (default): unchanged behaviour. Files named by sha256 under `BLOB_DIR`; downloads served with `FileResponse`.
+- **nexuscloud** (`services/nexuscloud.py`): authenticates with a NexusCloud *service token* (`Authorization: Bearer nct_…`) on `POST /api/v1/files/upload-request` → PUT the bytes to the presigned URL → `POST /files/confirm-upload/{id}`; download via `GET /files/download/{id}` → presigned GET streamed through our API; `DELETE /files/{id}`. The upload is spooled while hashing because NexusCloud needs the size up front; the filename and type sent are opaque (`coedit-blob`, `application/octet-stream`). A failed PUT/confirm triggers `cancel-upload`.
+- **Guarantees (tested against a stub):** the token goes only to the configured host (never to presigned URLs, and `nct_…` is in the log redaction filter); errors are reduced to a status code (`StorageError`) and the API returns a generic 502; base URL and presigned URLs must be https, credential-free and resolve only to public addresses, checked again at connect time via `netguard.GuardedTransport(any_host=…)` (DNS rebinding), with redirects off. `NEXUSCLOUD_ALLOW_PRIVATE=1` relaxes this for compose/stub use.
+- **Not verified:** any real NexusCloud deployment, real cloud buckets or CORS, NexusCloud's 5 GiB / free-tier limits, token expiry or revocation behaviour in practice. Coedit's own `max_upload_bytes` (50 MB) applies first. Exports are client-side and Yjs snapshots are in Postgres; neither uses the backend.
+- Decision: NexusCloud is reached through its REST API (not an S3-compatible endpoint, which it does not offer), and deleted Coedit files still keep their bytes (no GC), as with `local`.
+
 ## Security notes
 - Passwords: argon2id. Session: JWT (HS256, `APP_SECRET`, 7 days) in `httpOnly; SameSite=Lax` cookie; `Secure` when not local. Mutating requests also require `X-Requested-With` header (cheap CSRF guard alongside SameSite).
 - AuthZ: one `require_role` dependency; non-member → 404, low role → 403. Sync ticket is bound to one file and expires in 60 s.
@@ -100,7 +110,7 @@ POST run → validate caps → load+decrypt owner's 3 keys → asyncio task:
 | HyperFormula, repo licensed GPL-3.0-or-later | Hand-written formula parser; buying a commercial licence | HyperFormula is dual GPLv3/commercial. Shipping it in the browser bundle means distributing it, so the whole repo must be GPLv3-compatible. Writing our own evaluator would cost ~1 h. Configure `licenseKey: 'gpl-v3'`. If the owner later needs a closed licence: buy a commercial licence or replace `lib/formula.ts`. |
 | TipTap MIT packages only (`@tiptap/react`, `starter-kit`, `extension-collaboration`, `extension-collaboration-caret`, `extension-link`) | `@tiptap-pro/*`, Tiptap Cloud | The open-source editor is MIT; Pro extensions and Cloud need a paid licence. `make licences` fails on any `@tiptap-pro` package. |
 | Client-side import/export | Server-side Yjs→markdown in Python | No ProseMirror schema on the server; client already has the editor. |
-| Local volume for blobs | MinIO/S3 | One less service; `storage.py` interface allows swap later. |
+| Local volume for blobs, behind a `StorageBackend` interface with an optional NexusCloud backend | MinIO/S3 | One less service by default; the interface now carries the swap. |
 | In-process asyncio council task | Celery/RQ + Redis | Two fewer services; runs are rare and short. |
 | Workspace-level roles | Per-file ACLs/share links | Scope; link expiry is a non-goal. |
 | Cookie JWT, no sessions table | Server sessions | Fewer tables; logout clears cookie (no server revoke — known gap). |

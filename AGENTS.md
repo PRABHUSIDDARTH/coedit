@@ -9,7 +9,7 @@ A vertical slice of a collaborative workspace, not the full vision: keep changes
 | Sync | Node 22 sidecar: `@hocuspocus/server` + `@hocuspocus/extension-database` + `pg` (TypeScript) |
 | Web | Next.js 16 (App Router) + React 19 + TypeScript, Tailwind v4, shadcn/ui, next-themes, TanStack Query, Zustand, TipTap v3 (MIT extensions only), `@hocuspocus/provider`, `yjs`, HyperFormula, Excalidraw (canvas preview), pnpm |
 | DB | Postgres 16 |
-| Blobs | Local volume `/data/blobs`, content-addressed by sha256 |
+| Blobs | `StorageBackend` (`services/storage.py`): local volume `/data/blobs` by default (content-addressed by sha256), optional NexusCloud (`STORAGE_BACKEND=nexuscloud`, stub-tested only) |
 | LLMs | `anthropic`, `openai`, `google-genai` SDKs behind one adapter interface |
 | Run | `docker compose` (db, api, sync, web) |
 | Licence | **GPL-3.0-or-later** for the whole repo (forced by HyperFormula) |
@@ -62,7 +62,7 @@ frontend/  src/app/ (routes: /, /login, /signup, /app/*, /admin/*, /api/[...path
 - The web container copies source at build time: after frontend edits run `docker compose up -d --build web`. The Next server proxies `/api` to the API at runtime (`API_TARGET`, via `src/app/api/[...path]/route.ts`, which streams uploads). It cannot proxy WebSockets: the browser opens the sync WebSocket directly on `:1234` of the same host (`NEXT_PUBLIC_SYNC_URL` overrides, set at build time). `pnpm dev`/`pnpm build` use webpack because Turbopack cannot resolve packages on an NTFS checkout.
 - Canvas and the admin console have no backend yet: they run on sample data from `frontend/src/mocks` and are labelled "Preview" in the UI. Everything else talks to the real API. Any change to them must keep that label until a backend exists.
 - End-to-end check against the running stack: `cd sync && npx tsx scripts/smoke.ts` (creates `smoke-*@example.com` users in the dev DB; delete them afterwards).
-- To create a blob file from server code (e.g. council output): `storage.save_bytes(data)` then `blobs.add_version(db, file, user_id, key, size, mime)`; downloads are always `attachment` + `application/octet-stream` + `nosniff`.
+- To create a blob file from server code (e.g. council output): `stored = await storage.save_bytes(data)` then `blobs.add_version(db, file, user_id, stored, mime)`; downloads are always `attachment` + `application/octet-stream` + `nosniff`.
 - Council: never store or log `str(exc)` from a provider call — use `pipeline.safe_error(exc)`. Tests inject fakes by overriding the `get_adapter_factory` dependency (see the `fakes` fixture in `tests/test_council.py`). A model must have a price (`council/prices.py` or `COUNCIL_PRICES`) or the run fails closed. 422 bodies never echo input (handler in `main.py`).
 - To try the council without keys: set `COUNCIL_FAKE=1` in `.env` and `docker compose up -d api`. To test as a second browser user without a second profile, open `http://127.0.0.1:5173` (separate cookie jar from `localhost`).
 - Fresh-clone check without touching the running stack: clone to a temp dir, copy `.env`, `docker compose -p coedit_fresh -f docker-compose.yml -f <ports override> up -d --build` with `ports: !override [...]`, then `down -v` on THAT project only. Never run `down -v` on the main `coedit` project: its volume holds the owner's accounts and files.

@@ -4,9 +4,10 @@ import re
 import uuid
 from datetime import datetime
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,7 +40,7 @@ def display_name(filename: str | None) -> str:
     return "upload" if name in ("", ".", "..") else name[:200]
 
 
-async def _store(upload: UploadFile) -> tuple[str, int]:
+async def _store(upload: UploadFile) -> storage.Stored:
     limit = get_settings().max_upload_bytes
     try:
         return await storage.save_stream(upload, limit)
@@ -48,10 +49,12 @@ async def _store(upload: UploadFile) -> tuple[str, int]:
             status.HTTP_413_CONTENT_TOO_LARGE,
             f"File is too large (limit {limit // (1024 * 1024)} MB)",
         ) from None
+    except storage.StorageError:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Storage is unavailable") from None
 
 
 async def add_version(
-    db: AsyncSession, file: File, user_id: uuid.UUID, key: str, size: int, mime: str
+    db: AsyncSession, file: File, user_id: uuid.UUID, stored: storage.Stored, mime: str
 ) -> FileVersion:
     """Append the next version to a blob file. The caller commits.
     The row lock serializes concurrent uploads to one file so version numbers never collide."""
@@ -62,8 +65,10 @@ async def add_version(
     version = FileVersion(
         file_id=file.id,
         version_no=(latest or 0) + 1,
-        storage_key=key,
-        size_bytes=size,
+        storage_key=stored.key,
+        storage_backend=stored.backend,
+        sha256=stored.sha256,
+        size_bytes=stored.size,
         mime=mime,
         created_by=user_id,
     )
@@ -78,7 +83,7 @@ def _version_out(version: FileVersion, author: str) -> VersionOut:
         version_no=version.version_no,
         size_bytes=version.size_bytes,
         mime=version.mime,
-        sha256=version.storage_key,
+        sha256=version.sha256,
         created_by_name=author,
         created_at=version.created_at,
     )
@@ -94,7 +99,7 @@ async def upload_file(
 ) -> File:
     await require_role(db, user, workspace_id, Role.editor)
     await folder_in_workspace(db, folder_id, workspace_id)
-    key, size = await _store(file)
+    stored = await _store(file)
     row = File(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
@@ -103,10 +108,14 @@ async def upload_file(
         kind=FileKind.blob,
         created_by=user.id,
     )
-    db.add(row)
-    await db.flush()
-    await add_version(db, row, user.id, key, size, file.content_type or "application/octet-stream")
-    await db.commit()
+    try:
+        db.add(row)
+        await db.flush()
+        await add_version(db, row, user.id, stored, file.content_type or "application/octet-stream")
+        await db.commit()
+    except BaseException:
+        await storage.discard(stored)
+        raise
     await db.refresh(row)
     return row
 
@@ -118,11 +127,15 @@ async def upload_version(
     row = await load_file(db, user, file_id, Role.editor)
     if row.kind is not FileKind.blob:
         raise HTTPException(status.HTTP_409_CONFLICT, "Only uploaded files have versions")
-    key, size = await _store(file)
-    version = await add_version(
-        db, row, user.id, key, size, file.content_type or "application/octet-stream"
-    )
-    await db.commit()
+    stored = await _store(file)
+    try:
+        version = await add_version(
+            db, row, user.id, stored, file.content_type or "application/octet-stream"
+        )
+        await db.commit()
+    except BaseException:
+        await storage.discard(stored)
+        raise
     await db.refresh(version)
     return _version_out(version, user.display_name)
 
@@ -142,7 +155,7 @@ async def list_versions(file_id: uuid.UUID, user: CurrentUser, db: DbSession) ->
 @router.get("/{file_id}/versions/{version_no}/download")
 async def download_version(
     file_id: uuid.UUID, version_no: int, user: CurrentUser, db: DbSession
-) -> FileResponse:
+) -> Response:
     row = await load_file(db, user, file_id, Role.viewer)
     version = await db.scalar(
         select(FileVersion).where(
@@ -151,19 +164,43 @@ async def download_version(
     )
     if version is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    path = storage.blob_path(version.storage_key)
-    if not path.is_file():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "The stored file is missing")
-    # Uploaded bytes are never rendered by the browser on our origin: always a download,
-    # a generic type, no sniffing, and a sandbox in case something opens it anyway.
-    return FileResponse(
-        path,
+    headers = {
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox; default-src 'none'",
+        "Cache-Control": "private, no-store",
+    }
+    try:
+        backend = storage.backend_named(version.storage_backend)
+        if isinstance(backend, storage.LocalBackend):
+            path = storage.blob_path(version.storage_key)
+            if not path.is_file():
+                raise storage.StorageMissing
+            # Uploaded bytes are never rendered by the browser on our origin: always a download,
+            # a generic type, no sniffing, and a sandbox in case something opens it anyway.
+            return FileResponse(
+                path,
+                media_type="application/octet-stream",
+                filename=row.name,
+                content_disposition_type="attachment",
+                headers=headers,
+            )
+        chunks = await backend.get(version.storage_key)
+    except storage.StorageMissing:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "The stored file is missing") from None
+    except storage.StorageError:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Storage is unavailable") from None
+    quoted = quote(row.name)
+    disposition = (
+        f"attachment; filename*=utf-8''{quoted}"
+        if quoted != row.name
+        else f'attachment; filename="{row.name}"'
+    )
+    return StreamingResponse(
+        chunks,
         media_type="application/octet-stream",
-        filename=row.name,
-        content_disposition_type="attachment",
         headers={
-            "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": "sandbox; default-src 'none'",
-            "Cache-Control": "private, no-store",
+            **headers,
+            "Content-Disposition": disposition,
+            "Content-Length": str(version.size_bytes),
         },
     )

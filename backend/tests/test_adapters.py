@@ -26,7 +26,7 @@ from app.council.pipeline import safe_error
 from app.council.seats import SeatConfig
 from app.models import Provider
 
-KEY = "sk-" + "ant-api03-STUBKEYSTUBKEYSTUBKEYSTUBKEY"
+KEY = "sk-" + "ant-api03-STUBKEYSTUBKEYSTUBKEYSTUBKEY"  # fake-secret-ok
 
 
 class Stub:
@@ -390,7 +390,7 @@ def test_factory_modes(monkeypatch: pytest.MonkeyPatch) -> None:
     assert build_adapters({}) == {}
     assert set(provider_modes(set()).values()) == {"missing"}
 
-    only_openai = build_adapters({Provider.openai: "sk-" + "openai-xxxxxxxx"})
+    only_openai = build_adapters({Provider.openai: "sk-" + "openai-xxxxxxxx"})  # fake-secret-ok
     assert isinstance(only_openai[Provider.openai], OpenAIAdapter)
     assert only_openai[Provider.openai].model == settings.council_model_openai
     assert isinstance(only_openai[Provider.anthropic], FakeAdapter)  # no key -> demo seat
