@@ -1,0 +1,23 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+node_modules/
+dist/
+coverage/
+data/
+*.log
+
+# secrets and local tooling
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+.claude/
+.vscode/
+.idea/
+.DS_Store
