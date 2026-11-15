@@ -34,11 +34,11 @@ Canvas and the admin console are labelled **Preview** and use sample data (see t
 
 ## Setup
 
-Needs Docker with Compose. Nothing else for running; Node 22 and `uv` only for development.
+Needs Docker with Compose, plus `python3` or `openssl` once to generate secrets, and `make` for `make seed` (without `make`, run the `docker compose exec` line printed in the Makefile's `seed` target). Node 22 and `uv` are only for development. The first build downloads and compiles all four images; allow several minutes.
 
 ```bash
 cp .env.example .env
-# Fill the three secrets. Each line below prints one value:
+# Fill the three secrets. Each line below prints one value (`openssl rand -base64 32` does the same):
 python3 -c "import secrets,base64;print(base64.b64encode(secrets.token_bytes(32)).decode())"
 #   APP_SECRET=...          (session cookies)
 #   WS_TICKET_SECRET=...    (API -> sync tickets)
@@ -64,6 +64,29 @@ Useful switches in `.env`:
 | `DB_PORT` | Host port for Postgres (default 5433, because 5432 is often taken). |
 | `API_TARGET` | Where the Next server proxies `/api` (read at runtime; Compose sets `http://api:8000`; default for local dev `http://localhost:8000`). |
 | `NEXT_PUBLIC_SYNC_URL` | Overrides the sync WebSocket address. Baked in at build time; empty means unset. By default the browser connects to port 1234 on the page's own host. |
+
+### Running a second copy next to another stack
+
+The default ports (5173, 8000, 1234, 5433) are fixed in `docker-compose.yml`. To run a second, isolated copy (a fresh clone, or a test next to your real data) use a different project name, which also gives it its own volumes, and an override file for the ports:
+
+```yaml
+# ports.yml
+services:
+  db:   { ports: !override ["15433:5432"] }
+  api:  { ports: !override ["18000:8000"] }
+  sync: { ports: !override ["11234:1234"] }
+  web:
+    ports: !override ["15173:3000"]
+    build: { args: { NEXT_PUBLIC_SYNC_URL: "ws://localhost:11234" } }   # the browser connects to sync itself
+```
+
+```bash
+docker compose -p coedit2 -f docker-compose.yml -f ports.yml up -d --build
+COMPOSE_PROJECT_NAME=coedit2 make seed SEED_PASSWORD='choose-a-password'   # without the variable, make seed targets the project named after the directory
+docker compose -p coedit2 -f docker-compose.yml -f ports.yml down -v           # removes ONLY coedit2 and its volumes
+```
+
+Never run `down -v` without `-p` on a stack that holds data you want. This recipe was run once against a fresh clone (build, migrations, seed twice, `--verify` before and after `docker compose restart`, login through the web proxy). The sync WebSocket from a real browser on the alternate ports was not tested; the override was only checked to bake `ws://localhost:11234` into the web bundle.
 
 Two users in one browser: `http://localhost:5173` and `http://127.0.0.1:5173` keep separate
 sessions, so you can sign in as a different user in each. Two browsers also work.
