@@ -4,6 +4,7 @@ import { Activity, ArrowLeft, KeyRound, ScrollText, Shuffle } from "lucide-react
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/brand/logo";
+import { PreviewNote } from "@/components/states/preview-note";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-3"><Logo height={22} /><span className="rounded-md border border-border bg-raised px-2 py-0.5 text-xs font-medium text-ink-2">Admin console</span></div>
         <div className="flex items-center gap-2"><Link href="/app" className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-ink-2 hover:bg-raised hover:text-ink"><ArrowLeft className="size-4" aria-hidden /> Back to workspace</Link><ThemeToggle /></div>
       </header>
+      <PreviewNote>There is no admin backend yet, so this console shows sample data. Nothing here changes your workspace.</PreviewNote>
       <div className="flex flex-1 flex-col md:flex-row">
         <nav aria-label="Admin" className="flex gap-1 overflow-x-auto border-b border-border bg-raised p-2 md:w-56 md:flex-col md:border-b-0 md:border-r md:p-3">
           {NAV.map((n) => (

@@ -6,7 +6,7 @@ import { createCollabProvider } from "@/lib/data";
 
 /** Connects a provider for one document and exposes live presence. `onUpdate` is called for remote
  *  edits; it is kept in a ref, so passing an inline function is fine. */
-export function useCollab(docId: string, kind: DocKind, onUpdate?: (u: DocUpdate) => void) {
+export function usePreviewCollab(docId: string, kind: DocKind, onUpdate?: (u: DocUpdate) => void) {
   const [state, setState] = useState<ConnectionState>("connecting");
   // Presence is stored with the document it belongs to, so switching documents shows no stale peers.
   const [presence, setPresence] = useState<{ doc: string; peers: Record<string, PresenceEvent> }>({ doc: docId, peers: {} });

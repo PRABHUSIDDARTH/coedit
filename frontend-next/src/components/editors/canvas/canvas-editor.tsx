@@ -4,7 +4,7 @@ import { convertToExcalidrawElements, Excalidraw } from "@excalidraw/excalidraw"
 import "@excalidraw/excalidraw/index.css";
 import { useTheme } from "next-themes";
 import { useEffect, useMemo, useState } from "react";
-import { useCollab } from "@/hooks/use-collab";
+import { usePreviewCollab } from "@/hooks/use-preview-collab";
 import { usePageMeta } from "@/hooks/use-page-meta";
 import { useTokens } from "@/hooks/use-tokens";
 import type { CanvasData } from "@/lib/data/types";
@@ -20,7 +20,7 @@ export default function CanvasEditor({ docId, canvas }: { docId: string; canvas:
   // Light values on purpose: Excalidraw derives its own dark rendering from them.
   const t = useTokens(TOKENS, { theme: "light" });
   const [api, setApi] = useState<Api | null>(null);
-  const collab = useCollab(docId, "canvas");
+  const collab = usePreviewCollab(docId, "canvas");
   usePageMeta({ title: canvas.title, kind: "canvas", peers: [ME, ...collab.peers.map((p) => p.collaborator)] });
 
   const ready = !!t["--azure"];

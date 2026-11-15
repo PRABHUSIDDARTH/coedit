@@ -1,5 +1,5 @@
 "use client";
 
-import { useRepo } from "./use-repo";
+import { usePreview } from "./use-repo";
 
-export const useAdmin = () => useRepo("admin", (r) => r.getAdmin());
+export const useAdmin = () => usePreview("admin", (r) => r.getAdmin());
