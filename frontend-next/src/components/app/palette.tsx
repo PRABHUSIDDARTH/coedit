@@ -3,12 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect } from "react";
-import { Home, LayoutDashboard, Moon, Plus, Settings, Share2, Sparkles } from "lucide-react";
-import { toast } from "sonner";
+import { Home, LayoutDashboard, Moon, Settings, Share2, Sparkles } from "lucide-react";
+import { KIND_ICON, fileHref } from "@/components/app/file-tree";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from "@/components/ui/command";
-import { useRepo } from "@/hooks/use-repo";
-import { hrefFor, KIND_META } from "@/lib/nav";
+import { useCurrentWorkspace } from "@/hooks/use-workspace";
 import { useUi } from "@/stores/ui";
+
+const KIND_LABEL = { doc: "Doc", sheet: "Sheet", blob: "File" } as const;
 
 export function CommandPalette() {
   const router = useRouter();
@@ -16,8 +17,7 @@ export function CommandPalette() {
   const open = useUi((s) => s.paletteOpen);
   const setOpen = useUi((s) => s.setPaletteOpen);
   const setShare = useUi((s) => s.setShareOpen);
-  const workspaceId = useUi((s) => s.workspaceId);
-  const items = useRepo(`items:${workspaceId}`, (r) => r.listItems(workspaceId));
+  const { tree } = useCurrentWorkspace();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -34,26 +34,25 @@ export function CommandPalette() {
     <CommandDialog open={open} onOpenChange={setOpen} title="Command palette" description="Search files and run actions">
       <CommandInput placeholder="Search files or type a command" />
       <CommandList>
-        <CommandEmpty>No match. Try a file name or an action like &ldquo;new doc&rdquo;.</CommandEmpty>
+        <CommandEmpty>No match. Try a file name or an action like &ldquo;share&rdquo;.</CommandEmpty>
         <CommandGroup heading="Go to">
           <CommandItem onSelect={() => go("/app")}><Home /> Home</CommandItem>
           <CommandItem onSelect={() => go("/app/council")}><Sparkles /> AI Council</CommandItem>
           <CommandItem onSelect={() => go("/app/settings")}><Settings /> Settings</CommandItem>
-          <CommandItem onSelect={() => go("/admin")}><LayoutDashboard /> Admin console</CommandItem>
+          <CommandItem onSelect={() => go("/admin")}><LayoutDashboard /> Admin console (preview)</CommandItem>
         </CommandGroup>
         <CommandSeparator />
         <CommandGroup heading="Actions">
-          <CommandItem onSelect={() => run(() => toast("New files need the backend. Opening a sample doc."))}><Plus /> New doc</CommandItem>
-          <CommandItem onSelect={() => run(() => setShare(true))}><Share2 /> Share workspace <CommandShortcut>S</CommandShortcut></CommandItem>
+          <CommandItem onSelect={() => run(() => setShare(true))}><Share2 /> Share workspace</CommandItem>
           <CommandItem onSelect={() => run(() => setTheme(resolvedTheme === "dark" ? "light" : "dark"))}><Moon /> Toggle theme</CommandItem>
         </CommandGroup>
-        {items.status === "ready" && (
+        {tree.data && tree.data.files.length > 0 && (
           <>
             <CommandSeparator />
             <CommandGroup heading="Files">
-              {items.data.map((i) => {
-                const Icon = KIND_META[i.kind].icon;
-                return <CommandItem key={i.id} value={`${i.title} ${KIND_META[i.kind].label}`} onSelect={() => go(hrefFor(i))}><Icon /> {i.title}<CommandShortcut>{KIND_META[i.kind].label}</CommandShortcut></CommandItem>;
+              {tree.data.files.map((f) => {
+                const Icon = KIND_ICON[f.kind];
+                return <CommandItem key={f.id} value={`${f.name} ${KIND_LABEL[f.kind]}`} onSelect={() => go(fileHref(f))}><Icon /> {f.name}<CommandShortcut>{KIND_LABEL[f.kind]}</CommandShortcut></CommandItem>;
               })}
             </CommandGroup>
           </>
