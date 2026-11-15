@@ -1,0 +1,32 @@
+{
+  "name": "coedit-sync",
+  "version": "1.0.0",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "type": "module",
+  "dependencies": {
+    "@hocuspocus/extension-database": "^3.4.4",
+    "@hocuspocus/server": "^3.4.4",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.1",
+    "yjs": "^13.6.33"
+  },
+  "devDependencies": {
+    "@hocuspocus/provider": "^3.4.4",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "ws": "^8.23.0"
+  },
+  "private": true,
+  "license": "GPL-3.0-or-later"
+}
