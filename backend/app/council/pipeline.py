@@ -214,7 +214,7 @@ async def _save_files(run: CouncilRun, files: dict[str, str]) -> None:
         for name in prompts.ALLOWED_FILES:
             if name not in files:
                 continue
-            key, size = await storage.save_bytes(files[name].encode())
+            stored = await storage.save_bytes(files[name].encode())
             row = File(
                 id=uuid.uuid4(),
                 workspace_id=run.workspace_id,
@@ -225,7 +225,7 @@ async def _save_files(run: CouncilRun, files: dict[str, str]) -> None:
             )
             db.add(row)
             await db.flush()
-            await add_version(db, row, run.created_by, key, size, "text/markdown")
+            await add_version(db, row, run.created_by, stored, "text/markdown")
         await db.commit()
 
 
