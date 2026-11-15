@@ -1,0 +1,29 @@
+/* Document typography and collaboration decorations. Tokens only. */
+.doc-prose { outline: none; color: var(--text-1); font-size: 0.9375rem; line-height: 1.75; }
+.doc-prose > * + * { margin-top: 0.85em; }
+.doc-prose h1 { font-size: 2rem; line-height: 1.15; font-weight: 650; letter-spacing: -0.025em; margin-top: 0.2em; }
+.doc-prose h2 { font-size: 1.35rem; line-height: 1.25; font-weight: 600; letter-spacing: -0.015em; margin-top: 1.9em; }
+.doc-prose h3 { font-size: 1.1rem; font-weight: 600; margin-top: 1.5em; }
+.doc-prose p { color: var(--text-2); }
+.doc-prose strong { color: var(--text-1); font-weight: 600; }
+.doc-prose ul, .doc-prose ol { padding-left: 1.4em; color: var(--text-2); }
+.doc-prose ul { list-style: disc; } .doc-prose ol { list-style: decimal; }
+.doc-prose li + li { margin-top: 0.25em; } .doc-prose li > p { margin: 0; }
+.doc-prose blockquote { border-left: 3px solid var(--border); padding-left: 1em; color: var(--text-2); }
+.doc-prose a { color: var(--azure); text-underline-offset: 3px; text-decoration: underline; }
+.doc-prose code { font-family: var(--font-mono-src), ui-monospace, monospace; font-size: 0.85em; background: var(--raised); border: 1px solid var(--border); border-radius: 5px; padding: 0.1em 0.35em; }
+.doc-prose pre { background: var(--raised); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.9em 1.1em; overflow-x: auto; }
+.doc-prose pre code { background: none; border: 0; padding: 0; font-size: 0.82rem; color: var(--text-1); }
+.doc-prose table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 0.875rem; }
+.doc-prose th, .doc-prose td { border: 1px solid var(--border); padding: 0.45em 0.75em; text-align: left; vertical-align: top; }
+.doc-prose th { background: var(--raised); font-weight: 600; color: var(--text-1); }
+.doc-prose td > p, .doc-prose th > p { margin: 0; }
+.doc-prose .selectedCell { background: color-mix(in oklab, var(--azure) 14%, transparent); }
+.doc-prose p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--text-3); float: left; height: 0; pointer-events: none; }
+.doc-prose mark[data-comment] { background: color-mix(in oklab, var(--sun) 28%, transparent); color: inherit; border-bottom: 2px solid var(--sun); border-radius: 2px; cursor: pointer; }
+
+/* Remote collaborator carets (mock presence). --c is set per caret to var(--seat-N). */
+.remote-caret { position: relative; border-left: 2px solid var(--c); margin-left: -1px; margin-right: -1px; pointer-events: none; }
+.remote-caret__label { position: absolute; top: -1.45em; left: -2px; z-index: 5; background: var(--c); color: var(--on-fill); font: 500 11px/1 var(--font-inter), system-ui, sans-serif; padding: 3px 6px; border-radius: 4px 4px 4px 0; white-space: nowrap; user-select: none; }
+.remote-caret--typing .remote-caret__label::after { content: " …"; }
+@media (prefers-reduced-motion: no-preference) { .remote-caret { transition: border-color .2s; } }
