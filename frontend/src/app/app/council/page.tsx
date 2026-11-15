@@ -3,8 +3,9 @@
 import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { isActive, PROVIDER_LABEL, PROVIDERS, useCouncilConfig, useRun, useRuns, useStartRun, type Provider } from "@/api/council";
+import { isActive, PROVIDER_LABEL, PROVIDERS, useCouncilConfig, useRun, useRuns, useStartRun } from "@/api/council";
 import type { Tree } from "@/api/workspaces";
+import { CustomSeats, seatProblem, toRequest, type SeatDraft } from "@/components/council/custom-seats";
 import { ProviderKeys } from "@/components/council/keys";
 import { RunView } from "@/components/council/run-view";
 import { EmptyState, ErrorState } from "@/components/states/states";
@@ -36,7 +37,8 @@ export default function CouncilPage() {
   const setSeed = useUi((s) => s.setCouncilSeed);
   const [brief, setBrief] = useState(() => useUi.getState().councilSeed);
   const [folderId, setFolderId] = useState("");
-  const [synth, setSynth] = useState<Provider>("anthropic");
+  const [synth, setSynth] = useState("anthropic");
+  const [seats, setSeats] = useState<SeatDraft[]>([]);
   const [tokenCap, setTokenCap] = useState(60_000);
   const [costCap, setCostCap] = useState("1.00");
   const [pickedId, setPickedId] = useState<string | null>(null);
@@ -44,14 +46,17 @@ export default function CouncilPage() {
   useEffect(() => { if (seed) setSeed(""); }, [seed, setSeed]);
 
   const modes = new Map(config.data?.providers.map((p) => [p.provider, p.mode]));
-  const usable = PROVIDERS.filter((p) => modes.get(p) && modes.get(p) !== "missing");
+  // With custom seats, built-in providers take part only with a key of their own (no demo seats).
+  const usableNative = PROVIDERS.filter((p) => modes.get(p) && modes.get(p) !== "missing" && (seats.length === 0 || modes.get(p) === "live"));
+  const usable: string[] = [...usableNative, ...seats.map((s) => s.id)];
   const synthChoice = usable.includes(synth) ? synth : usable[0];
+  const seatIssue = seats.map((s) => seatProblem(s, config.data?.presets ?? [])).find((p) => p !== null) ?? null;
   const runId = pickedId ?? runs.data?.[0]?.id ?? null;
   const run = useRun(runId);
   const folders = useMemo(() => (tree.data ? folderOptions(tree.data) : []), [tree.data]);
   const isOwner = current?.role === "owner";
   const busy = start.isPending || (run.data ? isActive(run.data.status) : false);
-  const anyDemo = usable.some((p) => modes.get(p) === "demo");
+  const anyDemo = usableNative.some((p) => modes.get(p) === "demo");
 
   // When a run finishes its files appear in the tree.
   const finalStatus = run.data && !isActive(run.data.status) ? run.data.status : null;
@@ -60,7 +65,7 @@ export default function CouncilPage() {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!synthChoice) return;
-    start.mutate({ brief: brief.trim(), output_folder_id: folderId || null, synth_provider: synthChoice, token_cap: tokenCap, cost_cap_usd: costCap },
+    start.mutate({ brief: brief.trim(), output_folder_id: folderId || null, synth_provider: synthChoice, seats: seats.map(toRequest), token_cap: tokenCap, cost_cap_usd: costCap },
       { onSuccess: (created) => { setPickedId(created.id); toast.success("The Council is working"); }, onError: (err) => toast.error(err.message) });
   };
 
@@ -82,8 +87,8 @@ export default function CouncilPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1.5 text-sm font-medium text-ink">Writes the final
-              <select value={synthChoice ?? ""} onChange={(e) => setSynth(e.target.value as Provider)} disabled={busy || usable.length === 0} className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm font-normal">
-                {usable.map((p) => <option key={p} value={p}>{PROVIDER_LABEL[p]}{modes.get(p) === "demo" ? " (demo)" : ""}</option>)}
+              <select value={synthChoice ?? ""} onChange={(e) => setSynth(e.target.value)} disabled={busy || usable.length === 0} className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm font-normal">
+                {usable.map((p) => <option key={p} value={p}>{PROVIDER_LABEL[p as keyof typeof PROVIDER_LABEL] ?? p}{modes.get(p as (typeof PROVIDERS)[number]) === "demo" ? " (demo)" : ""}</option>)}
               </select>
             </label>
             <label className="space-y-1.5 text-sm font-medium text-ink">Save into
@@ -98,11 +103,13 @@ export default function CouncilPage() {
               <input type="number" min={0.01} max={Number(config.data?.max_cost_cap_usd ?? 5)} step={0.01} value={costCap} onChange={(e) => setCostCap(e.target.value)} disabled={busy} className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm font-normal" />
             </label>
           </div>
+          <CustomSeats seats={seats} setSeats={setSeats} presets={config.data?.presets ?? []} allowLocal={config.data?.allow_local_providers ?? false} workspaceId={current.id} disabled={busy || !isOwner} />
+          {seatIssue && <p role="status" className="text-sm text-warning">{seatIssue}</p>}
           <p className="text-xs text-ink-3">A run stops before any step that could pass either cap. Server maximum: {(config.data?.max_token_cap ?? 200000).toLocaleString()} tokens and ${Number(config.data?.max_cost_cap_usd ?? 5).toFixed(0)}.</p>
           {anyDemo && <p className="text-xs text-warning">Seats marked demo return canned text instead of calling a model.</p>}
           {!isOwner && <p className="text-sm text-ink-2">Only a workspace owner can start a run. You can still see the results.</p>}
-          {usable.length === 0 && config.isSuccess && <p className="text-sm text-ink-2">Add at least one provider key below to start.</p>}
-          <Button type="submit" className="h-10 w-full bg-tidal text-on-fill hover:opacity-90" disabled={busy || !isOwner || brief.trim().length < 3 || !synthChoice}>{busy ? "Council is working…" : "Run the Council"}</Button>
+          {usable.length === 0 && config.isSuccess && <p className="text-sm text-ink-2">Add at least one provider key below, or an OpenAI-compatible seat above, to start.</p>}
+          <Button type="submit" className="h-10 w-full bg-tidal text-on-fill hover:opacity-90" disabled={busy || !isOwner || brief.trim().length < 3 || !synthChoice || seatIssue !== null}>{busy ? "Council is working…" : "Run the Council"}</Button>
         </form>
 
         <div>

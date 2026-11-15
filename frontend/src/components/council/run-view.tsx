@@ -2,9 +2,8 @@
 
 import { AlertTriangle, Check, FileText, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { isActive, PROVIDER_LABEL, PROVIDERS, type Provider, type Run, type RunStep } from "@/api/council";
+import { isActive, PROVIDERS, seatLabel, type Run, type RunStep } from "@/api/council";
 import type { Tree } from "@/api/workspaces";
-import { providerSeat } from "@/components/council/keys";
 import { SeatAvatar } from "@/components/presence/seat-avatar";
 import { cn } from "@/lib/utils";
 
@@ -33,10 +32,18 @@ function Steps({ steps }: { steps: RunStep[] }) {
           </div>
           <p className="mt-0.5 font-mono text-[11px] text-ink-3">{s.model} · {s.input_tokens.toLocaleString()} in, {s.output_tokens.toLocaleString()} out</p>
           {!s.ok && s.error && <p className="mt-1 text-xs text-danger">{s.error}</p>}
+          {s.scores && <p className="mt-1 font-mono text-[11px] text-ink-3">scores: {Object.entries(s.scores).map(([k, v]) => `${k} ${v}`).join(", ")}</p>}
         </li>
       ))}
     </ul>
   );
+}
+
+/** Seats that took part: built-in providers first, then custom seats in the order they first acted. */
+function seatIds(run: Run): string[] {
+  const seen = [...new Set(run.steps.map((s) => s.provider))];
+  const native = PROVIDERS.filter((p) => seen.includes(p) || run.synth_provider === p);
+  return [...native, ...seen.filter((p) => !(PROVIDERS as string[]).includes(p))];
 }
 
 export function RunView({ run, tree }: { run: Run; tree: Tree | undefined }) {
@@ -78,13 +85,21 @@ export function RunView({ run, tree }: { run: Run; tree: Tree | undefined }) {
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        {PROVIDERS.map((p: Provider) => (
-          <article key={p} aria-label={`${PROVIDER_LABEL[p]} seat`} className="rounded-xl border border-border bg-panel p-4">
-            <header className="mb-3 flex items-center gap-2.5"><SeatAvatar name={PROVIDER_LABEL[p]} seat={providerSeat(p)} size={24} /><h3 className="text-sm font-medium text-ink">{PROVIDER_LABEL[p]}</h3>{run.synth_provider === p && <span className="ml-auto rounded-full border border-border px-2 py-0.5 text-[11px] text-ink-2">Writes the final</span>}</header>
+        {seatIds(run).map((p, n) => (
+          <article key={p} aria-label={`${seatLabel(p)} seat`} className="rounded-xl border border-border bg-panel p-4">
+            <header className="mb-3 flex items-center gap-2.5"><SeatAvatar name={seatLabel(p)} seat={n + 1} size={24} /><h3 className="text-sm font-medium text-ink">{seatLabel(p)}</h3>{run.synth_provider === p && <span className="ml-auto rounded-full border border-border px-2 py-0.5 text-[11px] text-ink-2">Writes the final</span>}</header>
             <Steps steps={run.steps.filter((s) => s.provider === p)} />
           </article>
         ))}
       </div>
+
+      {run.report.length > 0 && (
+        <section aria-label="Run report" className="rounded-xl border border-border bg-panel p-4">
+          <h3 className="mb-2 text-sm font-semibold text-ink">Run report</h3>
+          <p className="mb-2 text-xs text-ink-3">These steps failed; the run carried on without them.</p>
+          <ul className="space-y-1 text-sm text-ink-2">{run.report.map((line, i) => <li key={i} className="flex items-start gap-2"><AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />{line}</li>)}</ul>
+        </section>
+      )}
 
       {run.status === "done" && (
         <section aria-label="Output files" className="rounded-xl border border-border bg-panel p-4">
