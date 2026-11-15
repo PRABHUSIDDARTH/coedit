@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     council_model_google: str = "gemini-3.8-flash"
     # Optional JSON {"model-id": [input_usd_per_mtok, output_usd_per_mtok]} added to prices.py
     council_prices: str = ""
+    # Extra OpenAI-compatible presets: JSON {"id": {"label": "...", "base_url": "https://...",
+    # "needs_key": true}}. Their hosts are allowed like the built-in ones (Groq, NVIDIA NIM, Ollama).
+    council_provider_presets: str = ""
+    # Lets seats point at private / loopback / link-local addresses and at hosts that are not a
+    # preset (Ollama on this machine, a LAN vLLM). MUST stay off in any hosted deployment:
+    # with it on, a user can make the API server call internal services.
+    council_allow_local_providers: bool = False
 
     @field_validator(
         "council_model_anthropic", "council_model_openai", "council_model_google", mode="before"

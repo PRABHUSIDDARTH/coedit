@@ -8,6 +8,7 @@ import logging
 import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -20,7 +21,9 @@ from app.council.adapters.base import LLMAdapter, ProviderError
 from app.council.adapters.fake import FakeAdapter
 from app.council.adapters.google import GoogleAdapter
 from app.council.adapters.openai import OpenAIAdapter
+from app.council.adapters.openai_compat import OpenAICompatAdapter
 from app.council.pipeline import safe_error
+from app.council.seats import SeatConfig
 from app.models import Provider
 
 KEY = "sk-" + "ant-api03-STUBKEYSTUBKEYSTUBKEYSTUBKEY"
@@ -210,7 +213,97 @@ GOOGLE = Spec(
     key_header="x-goog-api-key",
 )
 
-SPECS = [ANTHROPIC, OPENAI, GOOGLE]
+
+def _compat(
+    name: str, model: str, ok: dict, refusal: dict, no_usage: dict, error_shape: str
+) -> Spec:
+    """OpenAI-compatible seat behind the guarded client (the stub is on loopback, so the local
+    flag is on here; the guard itself is covered in test_netguard.py)."""
+    return Spec(
+        name=name,
+        model=model,
+        make=lambda url: OpenAICompatAdapter(
+            SeatConfig(name, url + "/v1", model, Decimal(0), Decimal(0), 10_000, KEY),
+            allow_local=True,
+        ),
+        ok=ok,
+        error=lambda status: {"error": {"message": error_shape.format(key=KEY, status=status)}},
+        refusal=refusal,
+        no_usage=no_usage,
+        request=lambda r: {
+            "model": r["body"]["model"],
+            "system": r["body"]["messages"][0]["content"],
+            "user": r["body"]["messages"][1]["content"],
+            "max_tokens": r["body"]["max_tokens"],
+        },
+        path="/v1/chat/completions",
+        key_header="authorization",
+    )
+
+
+def _choice(message: dict, finish: str = "stop") -> list[dict]:
+    return [{"index": 0, "finish_reason": finish, "message": {"role": "assistant", **message}}]
+
+
+# Reply shapes as the three servers send them (extra vendor fields included on purpose).
+_GROQ_OK = {
+    "id": "chatcmpl-g1",
+    "object": "chat.completion",
+    "created": 1,
+    "model": "groq-model-a",
+    "system_fingerprint": "fp_1",
+    "choices": _choice({"content": "Hello world"}),
+    "usage": {"queue_time": 0.1, "prompt_tokens": 20, "completion_tokens": 7, "total_tokens": 27},
+    "x_groq": {"id": "req_1"},
+}
+_NIM_OK = {
+    "id": "cmpl-n1",
+    "object": "chat.completion",
+    "created": 1,
+    "model": "nim-model-b",
+    "choices": _choice({"content": "Hello world", "tool_calls": []}),
+    "usage": {
+        "prompt_tokens": 20,
+        "completion_tokens": 7,
+        "total_tokens": 27,
+        "prompt_tokens_details": None,
+    },
+}
+_OLLAMA_OK = {
+    "id": "chatcmpl-123",
+    "object": "chat.completion",
+    "created": 1,
+    "model": "llama-local:8b",
+    "system_fingerprint": "fp_ollama",
+    "choices": _choice({"content": "Hello world"}),
+    "usage": {"prompt_tokens": 20, "completion_tokens": 7, "total_tokens": 27},
+}
+GROQ = _compat(
+    "groq",
+    "groq-model-a",
+    _GROQ_OK,
+    {**_GROQ_OK, "choices": _choice({"content": None, "refusal": "I can't."})},
+    {k: v for k, v in _GROQ_OK.items() if k != "usage"},
+    "Invalid API Key {key} ({status})",
+)
+NIM = _compat(
+    "nvidia-nim",
+    "nim-model-b",
+    _NIM_OK,
+    {**_NIM_OK, "choices": _choice({"content": ""}, "content_filter")},
+    {k: v for k, v in _NIM_OK.items() if k != "usage"},
+    "Authorization failed for {key} ({status})",
+)
+OLLAMA = _compat(
+    "ollama",
+    "llama-local:8b",
+    _OLLAMA_OK,
+    {**_OLLAMA_OK, "choices": _choice({"content": ""}, "content_filter")},
+    {k: v for k, v in _OLLAMA_OK.items() if k != "usage"},
+    "model error {status} {key}",
+)
+
+SPECS = [ANTHROPIC, OPENAI, GOOGLE, GROQ, NIM, OLLAMA]
 ids = [s.name for s in SPECS]
 
 
@@ -263,7 +356,9 @@ async def test_refusal_is_a_failure(stub: Stub, spec: Spec) -> None:
         await spec.make(stub.url).complete("s", "u", 10)
 
 
-@pytest.mark.parametrize("spec", [OPENAI, GOOGLE], ids=["openai", "google"])
+@pytest.mark.parametrize(
+    "spec", [OPENAI, GOOGLE, GROQ, NIM, OLLAMA], ids=["openai", "google", "groq", "nim", "ollama"]
+)
 async def test_missing_usage_fails_closed(stub: Stub, spec: Spec) -> None:
     """A reply that cannot be priced must not be treated as free."""
     stub.responses = [(200, spec.no_usage)]
