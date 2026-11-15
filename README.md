@@ -42,7 +42,7 @@ sessions, so you can sign in as a different user in each. Two browsers also work
 ## Architecture
 
 ```
- browser  (React + Vite, served on :5173; proxies /api and /sync)
+ browser  (Next.js app on :5173; its server proxies /api, the browser opens /sync itself)
    │
    ├── REST + httpOnly cookie ───────►  api   FastAPI :8000
    │                                     │  auth, workspaces, roles, folders, files,
@@ -51,7 +51,7 @@ sessions, so you can sign in as a different user in each. Two browsers also work
    │                                     ├──► /data/blobs   (volume, files named by sha256)
    │                                     └──► LLM provider  (council only, server-side)
    │
-   └── WebSocket + 60 s ticket ──────►  sync  Hocuspocus (Node) :1234
+   └── WebSocket :1234 + 60 s ticket ►  sync  Hocuspocus (Node) :1234
                                          │  verifies the ticket, viewers are read-only,
                                          └──► Postgres      (doc_states table only)
 ```
@@ -80,18 +80,18 @@ provider key in the council panel (one key is enough; the others take part as de
 1. **Two users.** Browser A: `http://localhost:5173`, sign in as `owner@example.com`. Browser B
    (or `http://127.0.0.1:5173`): sign in as `editor@example.com`. Both open workspace **Demo**.
 2. **Doc.** Both open **Welcome**. Type in each: the other's text appears with a named,
-   coloured caret. Try H1, bold, a list.
+   coloured caret. Try H1, bold, a list, a table, and `/` for the block menu.
 3. **Sheet.** Both open **Budget**. Change a quantity in one browser: the totals
    (`=B2*C2`, `=SUM(...)`, `=AVERAGE(...)`) update in both. Type `=D5/0` somewhere to show an error value.
-4. **Files.** Click **↑File**, upload any file; open it and **Upload new version**; download v1
-   and v2 from the versions table.
+4. **Files.** In the sidebar click **+** then **Upload a file**; open it and **Upload new version**;
+   download v1 and v2 from the versions table.
 5. **Export.** In the sheet click **Export .csv** (computed values). In the doc, **Export .md**.
-   Optionally **⇪Import** a `.md` or `.csv` file to create a new doc or sheet.
+   Optionally **+ → Import .md or .csv** to create a new doc or sheet.
 6. **Viewer.** Sign browser B in as `viewer@example.com`: no toolbar, no create buttons, typing
    does nothing, but the owner's edits still arrive live.
-7. **Council.** As owner click **AI council**, write a brief, choose the **Handoff** folder,
-   keep the caps, **Start run**. Watch status, steps and spend; when it is `done`, open the
-   generated **AGENTS.md** (shown as plain text, downloadable).
+7. **Council.** As owner open **AI Council**, write a brief, choose the **Handoff** folder,
+   keep the caps, **Run the Council**. Watch the stages, each provider's steps and the spend;
+   when it is done, open the generated **AGENTS.md** (shown as plain text, downloadable).
 8. **Restart.** `docker compose restart`, reload: documents, sheets and files are still there.
 
 ## Development
@@ -113,15 +113,17 @@ against the running stack (it creates `smoke-*@example.com` users).
 |---|---|
 | **No council provider has been run against its real API.** Anthropic, OpenAI and Google adapters all use the official SDKs and are tested against local stubs of each API (same contract suite for all three), never the real services. Model ids and prices were read from the vendors' pricing pages on 2026-11-15 and not otherwise verified; reasoning-effort/thinking parameters in particular may need adjusting for a given model. | The builder had no keys, and automated tests never call real APIs. First live run: use a small cap. |
 | A provider without a key takes part as a **demo seat** (canned text, labelled "demo" in the panel). | Lets one key be enough to try the flow. |
+| **Canvas and the admin console are previews.** They run on sample data (and simulated collaborators) and carry a "Preview" label. | No backend exists for either yet. Docs, sheets, files, members, keys and the Council use the real API. |
+| The Council shows each provider's steps, tokens and spend, but not the models' text as it streams. | The API reports run steps and writes the result to files; the text of each draft is not exposed. |
 | Council research from URLs (server-side fetch with SSRF guard) | Not built. |
 | Playwright end-to-end tests | Stretch. UI was checked by hand in Chrome; logic is covered by unit and API tests. |
 | Live revocation of open editing sessions | Role is checked when a ticket is issued. A removed member keeps an already-open socket until it reconnects (tickets last 60 s). |
 | Server-side logout | Logout clears the cookie; the 7-day session token is not revoked on the server. |
-| Cloud deploy, Google sign-in, share links, comments, slides, PDF/docx/xlsx | Out of scope. |
+| Cloud deploy, Google sign-in, share links, slides, PDF/docx/xlsx | Out of scope. |
 | Sheet niceties (formatting, copy/paste ranges, more than 26×100) | Out of scope for the slice. |
-| Drag-and-drop moves, workspace rename/delete, upload progress, cancelling a council run | Not built; the API supports moving files and folders. |
+| Drag-and-drop moves, workspace rename/delete, profile editing, upload progress, cancelling a council run | Not built; the API supports moving files and folders. |
 | Garbage collection of blobs from deleted files | Not built; deleted files are soft-deleted and their bytes stay on the volume. |
 
-Known rough edges: delete confirmations use the browser's native dialog; the whole sheet
-re-renders per keystroke (fine at this size); exported CSV does not neutralise cells beginning
-with `+`, `-` or `@` for spreadsheet programs.
+Known rough edges: the whole sheet re-renders per keystroke (fine at this size); exported CSV does
+not neutralise cells beginning with `+`, `-` or `@` for spreadsheet programs; doc comments live in
+the same Yjs document as the text, so they have no separate permissions or notifications.

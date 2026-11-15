@@ -7,7 +7,7 @@ A vertical slice of a collaborative workspace, not the full vision: keep changes
 |---|---|
 | API | Python 3.12, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, Pydantic v2, argon2-cffi, PyJWT, cryptography (AES-GCM), httpx |
 | Sync | Node 22 sidecar: `@hocuspocus/server` + `@hocuspocus/extension-database` + `pg` (TypeScript) |
-| Web | Vite + React 19 + TypeScript, React Router, TanStack Query, TipTap v3 (MIT extensions only), `@hocuspocus/provider`, `yjs`, HyperFormula |
+| Web | Next.js 16 (App Router) + React 19 + TypeScript, Tailwind v4, shadcn/ui, next-themes, TanStack Query, Zustand, TipTap v3 (MIT extensions only), `@hocuspocus/provider`, `yjs`, HyperFormula, Excalidraw (canvas preview), pnpm |
 | DB | Postgres 16 |
 | Blobs | Local volume `/data/blobs`, content-addressed by sha256 |
 | LLMs | `anthropic`, `openai`, `google-genai` SDKs behind one adapter interface |
@@ -25,7 +25,7 @@ make licences                     # fails on non-allowlisted prod JS licences or
 make migrate                      # alembic upgrade head
 make seed SEED_PASSWORD=...       # demo users/workspace/doc/sheet on the running stack (idempotent)
 ```
-Per package: `cd backend && uv run pytest -q` · `cd sync && npm test` · `cd frontend && npm test`.
+Per package: `cd backend && uv run pytest -q` · `cd sync && npm test` · `cd frontend && pnpm test`.
 
 ## Repo layout
 ```
@@ -41,7 +41,7 @@ backend/
   app/council/adapters/ base.py anthropic.py openai.py google.py fake.py
   alembic/  tests/
 sync/      src/server.ts src/auth.ts  test/{auth,sync,health}.test.ts test/helpers.ts  scripts/{smoke,peer,seed}.ts
-frontend/  src/api/ src/pages/ src/components/{FileTree,Members,DocEditor,SheetGrid,BlobView,CouncilPanel}/   # api hooks: src/api/{auth,workspaces,council}.ts
+frontend/  src/app/ (routes: /, /login, /signup, /app/*, /admin/*, /api/[...path] proxy)  src/api/ (hooks: auth, workspaces, council)  src/lib/{collab,data,...}  src/components/{app,editors/{doc,sheet,canvas,blob},council,marketing,admin,ui}  src/mocks/ (canvas + admin previews only)
            src/lib/{tree,collab,formula,sheet,csv,markdown,importFile,pendingImport,download,format}.ts   # collab.ts = useCollab(fileId): ticket + Y.Doc + provider
            src/pages/{AuthPage,HomePage,WorkspacePage,FileView}.tsx
 ```
@@ -59,7 +59,8 @@ frontend/  src/api/ src/pages/ src/components/{FileTree,Members,DocEditor,SheetG
 - Sync tests use their own database `coedit_sync_test`; `sync/test/helpers.ts` creates it and runs the backend's Alembic migrations into it (needs `uv` on the host and the db container up). Only `test/sync.test.ts` touches the DB.
 - WS tickets carry `aud: "coedit-sync"` (`TICKET_AUDIENCE` in both `backend/app/routers/tickets.py` and `sync/src/auth.ts`; keep them equal). Yjs shared types: docs use `Y.XmlFragment('default')`, sheets `Y.Map('cells')`.
 - Second user for manual collaboration checks: `cd sync && npx tsx scripts/peer.ts <email> <password> <fileId> "text" <holdSeconds>`.
-- The web container copies source at build time: after frontend edits run `docker compose up -d --build web`.
+- The web container copies source at build time: after frontend edits run `docker compose up -d --build web`. The Next server proxies `/api` to the API at runtime (`API_TARGET`, via `src/app/api/[...path]/route.ts`, which streams uploads). It cannot proxy WebSockets: the browser opens the sync WebSocket directly on `:1234` of the same host (`NEXT_PUBLIC_SYNC_URL` overrides, set at build time). `pnpm dev`/`pnpm build` use webpack because Turbopack cannot resolve packages on an NTFS checkout.
+- Canvas and the admin console have no backend yet: they run on sample data from `frontend/src/mocks` and are labelled "Preview" in the UI. Everything else talks to the real API. Any change to them must keep that label until a backend exists.
 - End-to-end check against the running stack: `cd sync && npx tsx scripts/smoke.ts` (creates `smoke-*@example.com` users in the dev DB; delete them afterwards).
 - To create a blob file from server code (e.g. council output): `storage.save_bytes(data)` then `blobs.add_version(db, file, user_id, key, size, mime)`; downloads are always `attachment` + `application/octet-stream` + `nosniff`.
 - Council: never store or log `str(exc)` from a provider call — use `pipeline.safe_error(exc)`. Tests inject fakes by overriding the `get_adapter_factory` dependency (see the `fakes` fixture in `tests/test_council.py`). A model must have a price (`council/prices.py` or `COUNCIL_PRICES`) or the run fails closed. 422 bodies never echo input (handler in `main.py`).
