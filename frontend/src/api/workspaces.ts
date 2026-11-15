@@ -56,6 +56,7 @@ export function useTree(workspaceId: string) {
   return useQuery({
     queryKey: ["tree", workspaceId],
     queryFn: () => api<Tree>(`/workspaces/${workspaceId}/tree`),
+    enabled: workspaceId !== "",
     retry: false,
   });
 }
@@ -104,6 +105,7 @@ export function useMembers(workspaceId: string) {
   return useQuery({
     queryKey: ["members", workspaceId],
     queryFn: () => api<Member[]>(`/workspaces/${workspaceId}/members`),
+    enabled: workspaceId !== "",
   });
 }
 

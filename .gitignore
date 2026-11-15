@@ -23,4 +23,4 @@ data/
 .DS_Store
 
 # the runtime data/ rule above must not hide source code
-!frontend-next/src/lib/data/
+!frontend/src/lib/data/
