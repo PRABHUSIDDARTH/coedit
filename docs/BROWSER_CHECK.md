@@ -23,7 +23,7 @@ and **Network** (look for red/blocked requests). Use a private window for user B
 | 4 | New **doc**, type text, bold a word | status bar "connected"; Network shows WebSocket to `ws://<host>:1234` with status 101; no CSP errors |
 | 5 | As B open the same doc in the second window | B sees A's text live; A sees B's caret; edits flow both ways |
 | 6 | New **sheet**: `A1=2`, `A2=3`, `A3=SUM(A1:A2)` | A3 shows 5; B sees it |
-| 7 | **Canvas** (`/app` → canvas preview) | Excalidraw draws; check Network for `esm.sh` font requests: allowed by `font-src`. If the hand-drawn font falls back and the console says `Refused to load the font`, widen `font-src` only as far as the blocked URL needs |
+| 7 | **Canvas** (tree "+" menu → **New canvas**; the sidebar has no Canvas link) | Excalidraw draws; check Network for `esm.sh` font requests: allowed by `font-src`. If the hand-drawn font falls back and the console says `Refused to load the font`, widen `font-src` only as far as the blocked URL needs |
 | 8 | Upload a small file (tree → upload), then download it | file listed with a version; download saves; no CSP errors |
 | 9 | Doc → Export .md; sheet → Export .csv | files download with the content |
 | 10 | **Council** page (`/app/council`) | page renders; models list loads; no console errors (do not run with real keys) |

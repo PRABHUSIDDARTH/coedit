@@ -25,6 +25,14 @@ delete, import, upload), live-collaborative docs and sheets with cursors and pre
 uploads with versions and download, members, per-user provider keys, and the AI Council.
 Canvases are real but **single-user** (saved automatically, no realtime, no images; see Known limitations). The admin console is labelled **Preview** and uses sample data.
 
+**Verified: Canvas.** Tested and working:
+- A canvas is a persisted, single-user file kind: created inside Files, and it survives a reload.
+- PNG and SVG export work.
+- Viewers get a read-only canvas.
+- A stale save from a second tab returns a 409 conflict state instead of overwriting.
+
+**Not included in Canvas:** realtime co-editing, images, version history.
+
 ## Setup
 
 Needs Docker with Compose. Nothing else for running; Node 22 and `uv` only for development.
