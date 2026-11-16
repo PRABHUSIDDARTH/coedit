@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -10,11 +11,22 @@ import { TICKET_AUDIENCE } from "../src/auth.ts";
 
 export const SECRET = "test-ws-ticket-secret-0123456789abcdef";
 
-const user = process.env.POSTGRES_USER ?? "coedit";
-const password = process.env.POSTGRES_PASSWORD ?? "coedit";
-const port = process.env.DB_PORT ?? "5433";
+// Fall back to the repo's .env (written by `make env`) so tests reach the compose database without
+// exporting anything; the password is only ever put in a connection string, never printed.
+function fromDotenv(key: string): string | undefined {
+  try {
+    const text = readFileSync(new URL("../../.env", import.meta.url), "utf8");
+    return text.match(new RegExp(`^${key}=(.*)$`, "m"))?.[1]?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+const user = process.env.POSTGRES_USER ?? fromDotenv("POSTGRES_USER") ?? "coedit";
+const password = process.env.POSTGRES_PASSWORD ?? fromDotenv("POSTGRES_PASSWORD");
+if (!password) throw new Error("POSTGRES_PASSWORD is not set (environment or .env). Run `make env`.");
+const port = process.env.DB_PORT ?? fromDotenv("DB_PORT") ?? "5433";
 const TEST_DB = "coedit_sync_test";
-const base = `${user}:${password}@localhost:${port}`;
+const base = `${encodeURIComponent(user)}:${encodeURIComponent(password)}@localhost:${port}`;
 export const DATABASE_URL = `postgres://${base}/${TEST_DB}`;
 
 /** Create the sync test database if needed and bring it to the API's current schema, so the
@@ -60,10 +72,10 @@ export async function seedFile(pool: pg.Pool): Promise<string> {
 export function ticket(
   fileId: string,
   role: "owner" | "editor" | "viewer",
-  overrides: { secret?: string; expiresIn?: number; audience?: string } = {},
+  overrides: { secret?: string; expiresIn?: number; audience?: string; sub?: string } = {},
 ): string {
   return jwt.sign(
-    { sub: randomUUID(), file_id: fileId, role, name: `${role} user`, color: "#1f5f4a" },
+    { sub: overrides.sub ?? randomUUID(), file_id: fileId, role, name: `${role} user`, color: "#1f5f4a" },
     overrides.secret ?? SECRET,
     { algorithm: "HS256", expiresIn: overrides.expiresIn ?? 60, audience: overrides.audience ?? TICKET_AUDIENCE },
   );
@@ -147,4 +159,18 @@ export function snapshot(doc: Y.Doc) {
   // Y.Map iteration order is not canonical across replicas, so sort the entries.
   const cells = Object.entries(doc.getMap("cells").toJSON()).sort(([a], [b]) => a.localeCompare(b));
   return JSON.stringify({ text: doc.getText("t").toString(), cells, vector });
+}
+
+/** Make a user a member of the workspace that owns `fileId`; returns the user id (the ticket `sub`). */
+export async function addMember(pool: pg.Pool, fileId: string, role: "owner" | "editor" | "viewer"): Promise<string> {
+  const userId = randomUUID();
+  await pool.query(
+    "insert into users (id, email, password_hash, display_name) values ($1, $2, 'x', $3)",
+    [userId, `member-${userId}@example.com`, `${role} member`],
+  );
+  await pool.query(
+    "insert into memberships (workspace_id, user_id, role) select workspace_id, $2, $3::member_role from files where id = $1",
+    [fileId, userId, role],
+  );
+  return userId;
 }

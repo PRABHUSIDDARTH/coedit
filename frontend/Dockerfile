@@ -11,7 +11,11 @@ RUN pnpm install --frozen-lockfile
 
 FROM base AS build
 ARG NEXT_PUBLIC_SYNC_URL=""
-ENV NEXT_PUBLIC_SYNC_URL=$NEXT_PUBLIC_SYNC_URL NEXT_TELEMETRY_DISABLED=1
+# 1 = send Strict-Transport-Security (baked in at build time; only when served over HTTPS).
+ARG ENABLE_HSTS=""
+# enforce (default) | report-only | off. Baked in at build time.
+ARG CSP_MODE=""
+ENV NEXT_PUBLIC_SYNC_URL=$NEXT_PUBLIC_SYNC_URL ENABLE_HSTS=$ENABLE_HSTS CSP_MODE=$CSP_MODE NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN pnpm build
@@ -19,8 +23,10 @@ RUN pnpm build
 FROM node:22-alpine AS run
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
-COPY --from=build /app/.next/standalone ./
-COPY --from=build /app/.next/static ./.next/static
-COPY --from=build /app/public ./public
+COPY --chown=node:node --from=build /app/.next/standalone ./
+COPY --chown=node:node --from=build /app/.next/static ./.next/static
+COPY --chown=node:node --from=build /app/public ./public
+# Not root: the official node image ships an unprivileged "node" user.
+USER node
 EXPOSE 3000
 CMD ["node", "server.js"]

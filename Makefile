@@ -1,4 +1,8 @@
-.PHONY: up down dev db migrate test test-backend test-sync test-frontend lint licences secrets-check seed
+.PHONY: env up down dev db migrate test test-backend test-sync test-frontend lint licences secrets-check seed
+
+# Creates .env with random secrets (refuses if .env exists; prints no secret).
+env:
+	python3 scripts/make_env.py
 
 up:
 	docker compose up --build

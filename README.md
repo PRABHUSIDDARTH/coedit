@@ -30,16 +30,37 @@ Canvas and the admin console are labelled **Preview** and use sample data (see t
 Needs Docker with Compose. Nothing else for running; Node 22 and `uv` only for development.
 
 ```bash
-cp .env.example .env
-# Fill the three secrets. Each line below prints one value:
-python3 -c "import secrets,base64;print(base64.b64encode(secrets.token_bytes(32)).decode())"
-#   APP_SECRET=...          (session cookies)
-#   WS_TICKET_SECRET=...    (API -> sync tickets)
-#   KEY_ENCRYPTION_KEY=...  (must be base64 of exactly 32 bytes)
-
-docker compose up --build        # web :5173 · api :8000 · sync :1234 · db :5433 on the host
+make env                          # writes .env with random secrets (mode 600, gitignored, nothing printed)
+                                  # refuses to overwrite an existing .env
+docker compose up --build        # web :5173 · api :8000 · sync :1234 · db :5433, the last three on 127.0.0.1 only
 make seed SEED_PASSWORD='choose-a-password'   # optional demo data, in a second terminal
 ```
+
+**Network exposure.** Postgres, the API and the sync server are published on `127.0.0.1` only; only the
+web port (:5173) listens on all interfaces. The browser opens the sync WebSocket on port 1234 of the page's
+host, so a second machine opening `http://<your-ip>:5173` can use the app but cannot co-edit until you
+publish `:1234` yourself (or route `/sync` through a reverse proxy and set `NEXT_PUBLIC_SYNC_URL`).
+`.env.example` ships empty secrets on purpose, and `docker compose` refuses an empty `POSTGRES_PASSWORD`.
+An existing `.env` keeps working unchanged (the Postgres volume was initialised with its password).
+
+### Two-device (LAN) demo
+
+By default sync is reachable only from this machine. To co-edit from a second device on the same network:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d     # publishes :1234 on all interfaces
+hostname -I                                                              # this machine's LAN address, e.g. 192.168.1.20
+```
+
+Open `http://192.168.1.20:5173` on **both** devices (not `localhost`: the browser derives the sync address from
+the page's hostname, `ws://<that host>:1234`, and the CSP allows exactly that). Register or sign in as two users
+in one workspace and edit the same doc. If it does not connect, check the host firewall for ports 5173 and 1234.
+Back to the safe default with `docker compose up -d` (without the second file).
+
+**Warning:** this exposes the sync server on your network over plain `ws://`. Connecting still needs a 60 s
+ticket signed by the API and the sync server re-checks membership in Postgres, but the port is open to anyone
+who can reach this machine, and everything (cookies, documents) travels unencrypted. Trusted networks only.
+The web port (`:5173`) is always on all interfaces; db and api stay on `127.0.0.1` even with this file.
 
 Open http://localhost:5173. Register, or after `make seed` sign in as `owner@example.com`,
 `editor@example.com` or `viewer@example.com` with the password you chose.
@@ -55,6 +76,12 @@ Useful switches in `.env`:
 | `COUNCIL_PRICES` | JSON `{"model-id": [input_usd_per_mtok, output_usd_per_mtok]}` to add or override prices. |
 | `STORAGE_BACKEND` | `local` (default: the `/data/blobs` volume) or `nexuscloud`. See "Optional: NexusCloud storage". |
 | `DB_PORT` | Host port for Postgres (default 5433, because 5432 is often taken). |
+| `SESSION_TTL_HOURS` | Session cookie/JWT lifetime, default 24. Logout does not revoke a copied token. |
+| `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_IP_MAX`, `RATE_LIMIT_EMAIL_MAX`, `RATE_LIMIT_TRUSTED_PROXIES` | Login/register limits (in memory, per process; 0 disables a limit; defaults 900 s, 30, 8). 429 with `Retry-After`. |
+| `MAX_MESSAGE_BYTES`, `MAX_CONNECTIONS_PER_DOC` | Sync server: largest WebSocket message (default 8 MiB) and connections per document (default 50). |
+| `REVALIDATE_SECONDS`, `MEMBERSHIP_CHECK` | Sync server re-checks roles in Postgres on connect and every N seconds (default 30); removed/demoted members are disconnected. |
+| `ENABLE_HSTS` | Build-time: `1` adds `Strict-Transport-Security` (only when served over HTTPS). |
+| `CSP_MODE` | Build-time: `enforce` (default), `report-only` (same policy, sent as `Content-Security-Policy-Report-Only`) or `off` (no CSP header). Other security headers are always sent. Rebuild with `docker compose up -d --build web`. |
 | `API_TARGET` | Where the Next server proxies `/api` (read at runtime; Compose sets `http://api:8000`; default for local dev `http://localhost:8000`). |
 | `NEXT_PUBLIC_SYNC_URL` | Overrides the sync WebSocket address. Baked in at build time; empty means unset. By default the browser connects to port 1234 on the page's own host. |
 
@@ -212,6 +239,48 @@ Backend tests use their own database (`coedit_test`), sync tests another (`coedi
 neither touches your data. `cd sync && npx tsx scripts/smoke.ts` runs an end-to-end check
 against the running stack (it creates `smoke-*@example.com` users).
 
+### Content-Security-Policy
+
+The web app sends a CSP (script/style `'unsafe-inline'` for Next's inline scripts, the sync WebSocket on `:1234`,
+`esm.sh` for Excalidraw fonts, `frame-ancestors 'none'`; details in `docs/ARCHITECTURE.md`). It has not been
+exercised in a browser yet (see `docs/BROWSER_CHECK.md`). **If a page breaks under CSP, set `CSP_MODE=report-only`
+in `.env`, rebuild web, and open the browser console**: it lists each would-be violation without blocking anything.
+Fix with the smallest change in `frontend/src/lib/security-headers.ts`, then set it back to `enforce`.
+
+## Known limitations
+
+- **Email enumeration on add-member.** Adding a member by email answers "No account with that email" for
+  unknown addresses (404) and "Already a member" (409). Only workspace owners can call it. This is a
+  deliberate trade-off for invite-by-email. Register also answers 409 for a registered email. Login does not
+  distinguish a wrong password from an unknown email; login and register are rate limited.
+- **Soft deletes, no blob garbage collection.** Deleting a file sets `deleted_at`; its blob versions stay on
+  the volume.
+- **Council runs are in-process.** A run is an `asyncio` task inside the API process: no queue, no per-user
+  concurrency limit (the per-run spend cap is the only limit). A restart fails runs that were active.
+- **NexusCloud storage is stub-tested only.** No real NexusCloud service was used.
+- **Canvas and the Admin console are mock-data previews** and labelled so in the UI.
+- **GPL-3.0-or-later** for the whole repository, because HyperFormula (GPL) is linked into the web app.
+- **The council is a hypothesis.** Nothing here shows that several models plus critique beat a single model;
+  that was not measured.
+- **Rate limits are in memory** (per API process; reset on restart, not shared between replicas). The API
+  believes `X-Forwarded-For` only from peers in `RATE_LIMIT_TRUSTED_PROXIES` (compose: the Docker bridge
+  ranges, i.e. the bundled web proxy). That proxy passes a client-supplied header through unchanged, so with
+  `:5173` exposed directly a client can choose its own per-IP bucket; the per-email limit still applies. For a
+  per-IP limit that holds, put a reverse proxy that overwrites the header in front of the web port.
+- **Sync size limit is per message, not per document.** `MAX_MESSAGE_BYTES` (default 8 MiB) caps one WebSocket
+  message (one update or initial sync). Hocuspocus has no total-document-size option, so a document can still
+  grow beyond 8 MiB through many smaller updates. Connections per document are capped (`MAX_CONNECTIONS_PER_DOC`).
+- **Role changes can lag up to about 30 seconds.** A removed or demoted member keeps an already-open editing
+  socket until the sync server's next re-check (`REVALIDATE_SECONDS`, default 30); the API does not push a
+  disconnect. New connections are checked against Postgres immediately.
+- **The api container runs as root.** The sync and web containers run as the unprivileged `node` user; the api
+  image does not, because the existing `blobs` volume is root-owned (switching needs a one-time `chown` of that volume).
+- **Frontend dependency audit: 13 advisories, 7 high, none fixed.** `pnpm audit` reports 2 low, 4 moderate and
+  7 high. 11 of them, including all 7 high (`nanoid`, `lodash-es`; also `katex`), come in transitively through
+  `@excalidraw/excalidraw` (its mermaid conversion). The other 2 are in development tooling (`shadcn`, `eslint`).
+  Nothing was upgraded or force-resolved. `npm audit` for the sync server reports 0; the Python backend was
+  not audited.
+
 ## What is cut, and why
 
 | Cut or limited | Why |
@@ -222,8 +291,8 @@ against the running stack (it creates `smoke-*@example.com` users).
 | The Council shows each provider's steps, tokens and spend, but not the models' text as it streams. | The API reports run steps and writes the result to files; the text of each draft is not exposed. |
 | Council research from URLs (server-side fetch with SSRF guard) | Not built. |
 | Playwright end-to-end tests | Stretch. Logic is covered by unit and API tests. The UI was checked by hand in Chrome for sign-up, docs, sheets, upload and the Council; sync with a second user was checked with a scripted peer, and the viewer view, share/members dialogs, rename/delete dialogs and import were not exercised in a browser. |
-| Live revocation of open editing sessions | Role is checked when a ticket is issued. A removed member keeps an already-open socket until it reconnects (tickets last 60 s). |
-| Server-side logout | Logout clears the cookie; the 7-day session token is not revoked on the server. |
+| Instant revocation of open editing sessions | The sync server re-checks membership in Postgres on every connect and every `REVALIDATE_SECONDS` (default 30), then closes the socket of a removed or demoted member. The API does not push a disconnect on role change, so access can last up to that interval. |
+| Server-side logout | Logout clears the cookie; the session token (24 h by default, `SESSION_TTL_HOURS`) is not revoked on the server. There is no revocation list. |
 | Cloud deploy, Google sign-in, share links, slides, PDF/docx/xlsx | Out of scope. |
 | Sheet niceties (formatting, copy/paste ranges, more than 26×100) | Out of scope for the slice. |
 | Drag-and-drop moves, workspace rename/delete, profile editing, upload progress, cancelling a council run | Not built; the API supports moving files and folders. |

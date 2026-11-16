@@ -75,16 +75,45 @@ def synthesis_user(brief: str, drafts: dict[str, str], critiques: dict[str, str]
     return "\n\n".join(parts)
 
 
+# One outer code fence (``` or ```markdown) around the WHOLE reply, as some models emit.
+_OUTER_FENCE = re.compile(
+    r"\A\s*```[A-Za-z0-9_-]*[ \t]*\r?\n(?P<body>.*)\r?\n[ \t]*```[ \t]*\s*\Z", re.DOTALL
+)
+_FENCE_LINE = re.compile(r"^[ \t]*```")  # a line that opens or closes a code fence
+
+
+def _strip_outer_fence(text: str) -> str:
+    match = _OUTER_FENCE.match(text)
+    return match.group("body") if match else text
+
+
+def _drop_stray_closing_fence(body: str) -> str:
+    """Remove a trailing lone ``` only when fences in `body` are unbalanced (odd count), i.e. it
+    closes nothing in this file. A balanced code block at the end of a file stays untouched."""
+    lines = body.rstrip("\n").split("\n")
+    fences = sum(1 for line in lines if _FENCE_LINE.match(line))
+    if lines and lines[-1].strip() == "```" and fences % 2 == 1:
+        return "\n".join(lines[:-1])
+    return body
+
+
 def parse_files(text: str) -> dict[str, str]:
     """Split synthesis output on `=== FILE: name ===` markers. Only the allowlisted names are
-    kept (exact match), so the model cannot choose a path; a repeated name keeps its last block."""
+    kept (exact match), so the model cannot choose a path; a repeated name keeps its last block.
+    A single outer ``` fence around the whole reply is removed, and so is a stray closing fence
+    left at the end of the last block; fences inside file bodies are never touched."""
+    text = _strip_outer_fence(text)
     files: dict[str, str] = {}
     markers = list(_MARKER.finditer(text))
     for index, marker in enumerate(markers):
         name = marker.group(1)
         if name in ALLOWED_FILES:
-            end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
-            files[name] = text[marker.end() : end].strip("\n") + "\n"
+            last = index + 1 == len(markers)
+            end = len(text) if last else markers[index + 1].start()
+            body = text[marker.end() : end]
+            if last:
+                body = _drop_stray_closing_fence(body)
+            files[name] = body.strip("\n") + "\n"
     return files
 
 

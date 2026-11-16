@@ -16,8 +16,8 @@ A vertical slice of a collaborative workspace, not the full vision: keep changes
 
 ## Commands
 ```
-cp .env.example .env              # first time; fill APP_SECRET, WS_TICKET_SECRET, KEY_ENCRYPTION_KEY
-docker compose up --build         # everything: web :5173, api :8000, sync :1234, db :5433 (host)
+make env                          # first time: .env with random secrets (refuses if .env exists)
+docker compose up --build         # everything: web :5173, api/sync/db on 127.0.0.1 :8000/:1234/:5433
 make dev                          # db in docker; api/sync/web run locally with reload
 make test                         # backend pytest + sync tests + frontend vitest
 make lint                         # ruff check + ruff format --check + eslint + tsc --noEmit

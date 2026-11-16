@@ -1,0 +1,14 @@
+# LAN demo override: also publish the sync server (WebSocket, :1234) on all interfaces so a second
+# device can co-edit. Use:  docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d
+#
+# WARNING: this exposes the sync server to your whole network. Access still needs a 60 s ticket signed
+# by the API (and the sync server re-checks membership in Postgres), but the port itself is open to
+# anyone who can reach this machine, over plain ws:// (no TLS). Use only on a network you trust, and
+# switch back with:  docker compose up -d     (without this file)
+#
+# No env changes are needed: the browser opens ws://<hostname of the page>:1234, so a device that
+# loads http://<this machine's LAN IP>:5173 connects to ws://<LAN IP>:1234 on its own.
+services:
+  sync:
+    ports: !override
+      - "1234:1234"

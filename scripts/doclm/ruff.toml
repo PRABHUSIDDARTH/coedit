@@ -1,0 +1,11 @@
+# Same rule set as backend/pyproject.toml (default + I, B, S, line length 100), for the docLM scripts.
+line-length = 100
+target-version = "py312"
+extend-exclude = ["data"]
+
+[lint]
+extend-select = ["I", "B", "S"]
+
+[lint.per-file-ignores]
+# like the backend: asserts in tests; tests run this repo's own scripts via subprocess
+"tests/**" = ["S101", "S603", "S607"]

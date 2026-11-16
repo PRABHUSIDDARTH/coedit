@@ -88,3 +88,30 @@ async def test_mutating_request_needs_csrf_header() -> None:
         c.headers.pop("X-Requested-With")
         resp = await c.post("/api/auth/login", json={"email": unique_email(), "password": PASSWORD})
         assert resp.status_code == 403
+
+
+async def test_session_lifetime_is_configurable_default_24h(
+    client: AsyncClient, monkeypatch
+) -> None:
+    import jwt
+
+    from app.config import Settings, get_settings
+    from app.security import SESSION_COOKIE
+
+    assert Settings.model_fields["session_ttl_hours"].default == 24
+
+    def lifetime(resp) -> tuple[int, int]:
+        morsel = resp.cookies[SESSION_COOKIE]
+        claims = jwt.decode(morsel, options={"verify_signature": False})
+        max_age = int(resp.headers["set-cookie"].lower().split("max-age=")[1].split(";")[0])
+        return claims["exp"] - claims["iat"], max_age
+
+    monkeypatch.setattr(get_settings(), "session_ttl_hours", 24)
+    email = unique_email()
+    await register(client, email)
+    resp = await client.post("/api/auth/login", json={"email": email, "password": PASSWORD})
+    assert lifetime(resp) == (24 * 3600, 24 * 3600)
+
+    monkeypatch.setattr(get_settings(), "session_ttl_hours", 2)
+    resp = await client.post("/api/auth/login", json={"email": email, "password": PASSWORD})
+    assert lifetime(resp) == (2 * 3600, 2 * 3600)

@@ -11,7 +11,6 @@ from argon2.exceptions import Argon2Error, InvalidHashError
 from app.config import get_settings
 
 SESSION_COOKIE = "coedit_session"
-SESSION_TTL = timedelta(days=7)
 _ALGORITHM = "HS256"
 
 _hasher = PasswordHasher()
@@ -36,9 +35,14 @@ async def verify_password(password_hash: str | None, password: str) -> bool:
     return ok and password_hash is not None
 
 
+def session_ttl() -> timedelta:
+    """Session lifetime from SESSION_TTL_HOURS (default 24). Logout does not revoke a token."""
+    return timedelta(hours=get_settings().session_ttl_hours)
+
+
 def create_session_token(user_id: uuid.UUID) -> str:
     now = datetime.now(UTC)
-    payload = {"sub": str(user_id), "iat": now, "exp": now + SESSION_TTL}
+    payload = {"sub": str(user_id), "iat": now, "exp": now + session_ttl()}
     return jwt.encode(payload, get_settings().app_secret, algorithm=_ALGORITHM)
 
 

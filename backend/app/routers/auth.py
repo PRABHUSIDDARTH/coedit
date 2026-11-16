@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -9,11 +9,12 @@ from sqlalchemy.exc import IntegrityError
 from app.config import get_settings
 from app.deps import CurrentUser, DbSession
 from app.models import User
+from app.ratelimit import enforce
 from app.security import (
     SESSION_COOKIE,
-    SESSION_TTL,
     create_session_token,
     hash_password,
+    session_ttl,
     verify_password,
 )
 
@@ -44,7 +45,7 @@ def _set_session_cookie(response: Response, user: User) -> None:
     response.set_cookie(
         SESSION_COOKIE,
         create_session_token(user.id),
-        max_age=int(SESSION_TTL.total_seconds()),
+        max_age=int(session_ttl().total_seconds()),
         httponly=True,
         samesite="lax",
         secure=get_settings().web_origin.startswith("https://"),
@@ -53,7 +54,8 @@ def _set_session_cookie(response: Response, user: User) -> None:
 
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterIn, response: Response, db: DbSession) -> User:
+async def register(body: RegisterIn, request: Request, response: Response, db: DbSession) -> User:
+    enforce(request, "register", body.email)
     user = User(
         email=body.email.lower(),
         password_hash=await hash_password(body.password),
@@ -70,7 +72,8 @@ async def register(body: RegisterIn, response: Response, db: DbSession) -> User:
 
 
 @router.post("/login", response_model=UserOut)
-async def login(body: LoginIn, response: Response, db: DbSession) -> User:
+async def login(body: LoginIn, request: Request, response: Response, db: DbSession) -> User:
+    enforce(request, "login", body.email)
     user = await db.scalar(select(User).where(User.email == body.email))
     if not await verify_password(user.password_hash if user else None, body.password):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
