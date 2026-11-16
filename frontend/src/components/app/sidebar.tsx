@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronsUpDown, Home, LayoutDashboard, LogOut, PenTool, Plus, Search, Settings, Sparkles } from "lucide-react";
+import { ChevronsUpDown, Home, LayoutDashboard, LogOut, Plus, Search, Settings, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -79,7 +79,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <div className="space-y-0.5">
           <NavLink href="/app" icon={Home} active={pathname === "/app"} onNavigate={onNavigate}>Home</NavLink>
           <NavLink href="/app/council" icon={Sparkles} active={pathname.startsWith("/app/council")} onNavigate={onNavigate}>AI Council</NavLink>
-          <NavLink href="/app/canvas/onboarding-flow" icon={PenTool} active={pathname.startsWith("/app/canvas")} onNavigate={onNavigate}>Canvas <span className="ml-1 rounded border border-border px-1 text-[10px] text-ink-3">Preview</span></NavLink>
         </div>
 
         <div>

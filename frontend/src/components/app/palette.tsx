@@ -9,7 +9,7 @@ import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, C
 import { useCurrentWorkspace } from "@/hooks/use-workspace";
 import { useUi } from "@/stores/ui";
 
-const KIND_LABEL = { doc: "Doc", sheet: "Sheet", blob: "File" } as const;
+const KIND_LABEL = { doc: "Doc", sheet: "Sheet", blob: "File", canvas: "Canvas" } as const;
 
 export function CommandPalette() {
   const router = useRouter();

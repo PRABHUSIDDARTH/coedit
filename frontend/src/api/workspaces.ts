@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 
 export type Role = "owner" | "editor" | "viewer";
-export type FileKind = "doc" | "sheet" | "blob";
+export type FileKind = "doc" | "sheet" | "blob" | "canvas";
 
 export interface Workspace {
   id: string;
@@ -63,7 +63,7 @@ export function useTree(workspaceId: string) {
 
 export type TreeChange =
   | { op: "createFolder"; name: string; parentId: string | null }
-  | { op: "createFile"; name: string; kind: "doc" | "sheet"; folderId: string | null }
+  | { op: "createFile"; name: string; kind: "doc" | "sheet" | "canvas"; folderId: string | null }
   | { op: "renameFolder"; id: string; name: string }
   | { op: "renameFile"; id: string; name: string }
   | { op: "deleteFolder"; id: string }
@@ -191,11 +191,11 @@ export function useUploadVersion(workspaceId: string, fileId: string) {
   });
 }
 
-/** Create an empty doc or sheet and return it (used by import, which then fills it). */
+/** Create an empty doc, sheet or canvas and return it (used by import, which then fills it). */
 export function useCreateFile(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { name: string; kind: "doc" | "sheet"; folder_id: string | null }) =>
+    mutationFn: (body: { name: string; kind: "doc" | "sheet" | "canvas"; folder_id: string | null }) =>
       api<FileEntry>(`/workspaces/${workspaceId}/files`, { method: "POST", body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tree", workspaceId] }),
   });

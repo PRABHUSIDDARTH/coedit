@@ -7,12 +7,12 @@ import { useWorkspaces, type FileEntry, type Tree, type Workspace } from "@/api/
 import { useUi } from "@/stores/ui";
 
 /** Find a file by id across the user's workspaces, and switch the sidebar to the one it lives in. */
-export function useFileLookup(fileId: string): { loading: boolean; file?: FileEntry; workspace?: Workspace; role?: Tree["role"] } {
+export function useFileLookup(fileId: string, pollMs?: number): { loading: boolean; file?: FileEntry; workspace?: Workspace; role?: Tree["role"] } {
   const workspaces = useWorkspaces();
   const setWorkspaceId = useUi((s) => s.setWorkspaceId);
   const current = useUi((s) => s.workspaceId);
   const trees = useQueries({
-    queries: (workspaces.data ?? []).map((w) => ({ queryKey: ["tree", w.id], queryFn: () => api<Tree>(`/workspaces/${w.id}/tree`), retry: false })),
+    queries: (workspaces.data ?? []).map((w) => ({ queryKey: ["tree", w.id], queryFn: () => api<Tree>(`/workspaces/${w.id}/tree`), retry: false, refetchInterval: pollMs })),
   });
   let file: FileEntry | undefined; let workspace: Workspace | undefined; let role: Tree["role"] | undefined;
   (workspaces.data ?? []).forEach((w, i) => {
