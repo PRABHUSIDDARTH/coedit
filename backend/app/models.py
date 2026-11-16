@@ -61,6 +61,7 @@ class FileKind(enum.StrEnum):
     doc = "doc"
     sheet = "sheet"
     blob = "blob"
+    canvas = "canvas"
 
 
 def _uuid_pk() -> Mapped[uuid.UUID]:
@@ -143,6 +144,24 @@ class DocState(Base):
     )
     state: Mapped[bytes] = mapped_column(LargeBinary)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CanvasScene(Base):
+    """The one stored scene of a canvas file: {elements, appState (background and grid only)}.
+    `revision` goes up by one per save; a save must name the revision it was based on."""
+
+    __tablename__ = "canvas_scenes"
+
+    file_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("files.id", ondelete="CASCADE"), primary_key=True
+    )
+    scene: Mapped[dict] = mapped_column(JSONB)
+    revision: Mapped[int]
+    size_bytes: Mapped[int]
+    updated_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class FileVersion(Base):

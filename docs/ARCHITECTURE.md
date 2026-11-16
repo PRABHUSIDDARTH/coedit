@@ -20,9 +20,10 @@ browser (React/Vite :5173)
 | `workspaces` | id, name, owner_id → users, created_at |
 | `memberships` | workspace_id → workspaces, user_id → users, role enum(owner, editor, viewer), created_at · pk(workspace_id, user_id) |
 | `folders` | id, workspace_id, parent_id → folders null, name, created_at · unique(workspace_id, parent_id, name) |
-| `files` | id, workspace_id, folder_id → folders null, name, kind enum(doc, sheet, blob), current_version int null, created_by, created_at, updated_at, deleted_at null |
+| `files` | id, workspace_id, folder_id → folders null, name, kind enum(doc, sheet, blob, canvas), current_version int null, created_by, created_at, updated_at, deleted_at null |
 | `file_versions` | id, file_id → files, version_no int, storage_key text (sha256 for `local`, NexusCloud file id for `nexuscloud`), storage_backend text default `local`, sha256 text, size_bytes bigint, mime text, created_by, created_at · unique(file_id, version_no) |
 | `doc_states` | file_id pk → files, state bytea (Yjs update), updated_at — written only by sync |
+| `canvas_scenes` | file_id pk → files ON DELETE CASCADE, scene jsonb (`{elements, appState: {viewBackgroundColor, gridSize, gridModeEnabled}}`), revision int, size_bytes int, updated_by → users, updated_at |
 | `provider_keys` | id, user_id → users, provider enum(anthropic, openai, google), ciphertext bytea, nonce bytea, last4 text, created_at · unique(user_id, provider) |
 | `council_runs` | id, workspace_id, output_folder_id, created_by, brief text, synth_provider (text: a built-in provider or a custom seat id), status enum(queued, drafting, critiquing, synthesizing, done, failed, capped), token_cap int, cost_cap_usd numeric, tokens_used int, cost_usd numeric, error text null, created_at, finished_at |
 | `council_steps` | id, run_id → council_runs, stage enum(draft, critique, synthesis), provider (text: seat id), model, input_tokens, output_tokens, cost_usd, output_text, error null, scores jsonb null (critique: `{draft seat: 0..10}`), created_at |
@@ -42,7 +43,9 @@ Docs and sheets live in `files` (kind doc/sheet) with content in `doc_states`. B
 | `PATCH/DELETE /files/{id}` (rename, move, soft delete) | editor |
 | `POST /files/upload` (multipart, new blob file) · `POST /files/{id}/versions` (new version) | editor |
 | `GET /files/{id}/versions` · `GET /files/{id}/versions/{n}/download` | viewer |
-| `POST /files/{id}/ws-ticket` → `{ticket, url, read_only}` | viewer |
+| `POST /files/{id}/ws-ticket` → `{ticket, url, read_only}` (docs and sheets; 409 for blobs and canvases) | viewer |
+| `GET /files/{id}/scene` → `{scene, revision, updated_at}` (canvas files only, else 409) | viewer |
+| `PUT /files/{id}/scene` `{base_revision, scene}` → `{revision, updated_at, links_removed}`; 409 on a stale revision | editor |
 | `GET /settings/keys` (provider + last4 only) · `PUT/DELETE /settings/keys/{provider}` | user (own keys) |
 | `POST /workspaces/{id}/council/models` (models a preset/base URL offers; also "Test connection") | owner |
 | `POST /workspaces/{id}/council/runs` · `GET /council/runs/{id}` (status, steps meta, spend) | owner |
@@ -95,6 +98,26 @@ POST run → validate caps → load+decrypt owner's 3 keys → asyncio task:
 - **Not verified:** any real NexusCloud deployment, real cloud buckets or CORS, NexusCloud's 5 GiB / free-tier limits, token expiry or revocation behaviour in practice. Coedit's own `max_upload_bytes` (50 MB) applies first. Exports are client-side and Yjs snapshots are in Postgres; neither uses the backend.
 - Decision: NexusCloud is reached through its REST API (not an S3-compatible endpoint, which it does not offer), and deleted Coedit files still keep their bytes (no GC), as with `local`.
 
+## Canvas (single-user, persisted)
+- **Model:** `files.kind = 'canvas'`; create, rename, move and soft-delete use the existing file routes (editor role; `FileIn.kind` now allows `canvas`). The scene lives in
+  `canvas_scenes` as jsonb (not `file_versions` blobs: autosave would create a version row per save). Docs and sheets have no history either, so a canvas has a
+  `revision` counter, not snapshots.
+- **Save** (`PUT /files/{id}/scene`, `routers/canvas.py`, `services/canvas.py`): permission first (non-member 404, viewer 403, non-canvas 409), then the body is read
+  with a streaming cap (5 MiB; 413 by `Content-Length` or while streaming; the global upload limit is much larger), then JSON parse (422 without echoing input), schema
+  validation (allowlisted element types, finite numbers, id/text/points limits, at most 20,000 elements, unique ids), reduction of `appState` to background colour and grid,
+  removal of deleted-element tombstones, and link sanitising (http, https, mailto only; control characters and spaces rejected so `java\tscript:` fails). Image, embeddable,
+  iframe and magicframe elements are rejected. The row is locked (`FOR UPDATE`) and saved only if `base_revision` equals the stored revision, else 409 with the current revision.
+- **Client:** `frontend/src/components/editors/canvas/canvas-editor.tsx`. A debounced autosave state machine (`lib/autosave.ts`, 1.5 s quiet) with saved / saving / failed / conflict
+  states; change detection by element `version`, so selection and scrolling are not edits; images are caught at save time with a message (the image tool is disabled);
+  `viewModeEnabled` for viewers; 403/404 on save refetches the role; the file's tree is polled every 30 s while a canvas is open; scenes from the server are sanitised again before
+  they reach the editor.
+- **Realtime: not built (decision).** The sync server would carry a Y.Map keyed by element id (it is document-type agnostic, and Excalidraw has `reconcileElements`), but then the
+  live state would bypass the REST save's server-side checks (sync can only cap a message at 8 MiB and cannot validate content, so every peer would have to sanitise links itself),
+  there would be two sources of truth, the stored schema drops the tombstones realtime needs, and it cannot be tested without two real browsers. Revisit with server-side extraction in
+  the sync sidecar (docs/RAG_PLAN.md D5 has the same need).
+- **Images:** out of scope for v1 (they need file storage and per-file limits).
+- **Not verified in a browser:** Excalidraw behaviour with `viewModeEnabled`, `tools.image: false`, restore of saved scenes, PNG/SVG export, font loading under the CSP. Checklist: `docs/CANVAS_BROWSER_CHECK.md`.
+
 ## Security notes
 - Passwords: argon2id. Session: JWT (HS256, `APP_SECRET`, `SESSION_TTL_HOURS`, default 24) in `httpOnly; SameSite=Lax` cookie; logout only clears the cookie, there is no server-side revocation list; `Secure` when not local. Mutating requests also require `X-Requested-With` header (cheap CSRF guard alongside SameSite).
 - AuthZ: one `require_role` dependency; non-member → 404, low role → 403. Sync ticket is bound to one file and expires in 60 s.
@@ -107,7 +130,7 @@ POST run → validate caps → load+decrypt owner's 3 keys → asyncio task:
 - Network: db, api and sync publish on 127.0.0.1 only; no default database password (`make env` generates secrets; compose refuses an empty `POSTGRES_PASSWORD`). sync and web containers run as the unprivileged `node` user; the api container still runs as root (its `blobs` volume is root-owned on existing installs: chown it before switching). Healthchecks on api, sync, web.
 
 ## Migrations
-0001 baseline extensions · 0002 users · 0003 workspaces, memberships, folders, files · 0004 doc_states · 0005 file_versions · 0006 provider_keys, council_runs, council_steps · 0007 council seat ids (text provider columns, step scores) · 0008 file_versions storage backend + sha256. The hardening branch adds no migration.
+0001 baseline extensions · 0002 users · 0003 workspaces, memberships, folders, files · 0004 doc_states · 0005 file_versions · 0006 provider_keys, council_runs, council_steps · 0007 council seat ids (text provider columns, step scores) · 0008 file_versions storage backend + sha256 · 0009 `canvas` file kind + `canvas_scenes` (downgrade deletes canvas files: Postgres cannot drop an enum value). The hardening branch adds no migration.
 
 ## Key decisions (and rejected alternatives)
 | Decision | Rejected | Why |

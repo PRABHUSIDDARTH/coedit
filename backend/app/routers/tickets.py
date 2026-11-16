@@ -44,6 +44,8 @@ async def create_ws_ticket(file_id: uuid.UUID, user: CurrentUser, db: DbSession)
     role = await require_role(db, user, file.workspace_id, Role.viewer)
     if file.kind is FileKind.blob:
         raise HTTPException(status.HTTP_409_CONFLICT, "Uploaded files cannot be co-edited")
+    if file.kind is FileKind.canvas:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Canvases are not realtime yet")
     settings = get_settings()
     now = datetime.now(UTC)
     color = user_color(user.id)

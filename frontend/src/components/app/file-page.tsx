@@ -11,6 +11,7 @@ import { useFileLookup } from "@/hooks/use-file";
 
 const DocEditor = dynamic(() => import("@/components/editors/doc/doc-editor"), { ssr: false, loading: () => <Loading /> });
 const SheetEditor = dynamic(() => import("@/components/editors/sheet/sheet-editor"), { ssr: false, loading: () => <Loading /> });
+const CanvasEditor = dynamic(() => import("@/components/editors/canvas/canvas-editor"), { ssr: false, loading: () => <Loading /> });
 const BlobView = dynamic(() => import("@/components/editors/blob/blob-view"), { ssr: false, loading: () => <Loading /> });
 
 function Loading() {
@@ -20,7 +21,8 @@ function Loading() {
 /** Looks the file up, checks it is the kind this route expects, and renders the right editor. */
 export function FilePage({ kind }: { kind: FileKind }) {
   const { id } = useParams<{ id: string }>();
-  const { loading, file, workspace, role } = useFileLookup(id);
+  // A canvas re-reads the tree every 30 s so a role change (demotion, removal) reaches an open canvas.
+  const { loading, file, workspace, role } = useFileLookup(id, kind === "canvas" ? 30_000 : undefined);
   usePageMeta(file ? undefined : { title: loading ? "Loading…" : "Not found", kind: kind === "blob" ? undefined : kind, peers: [] });
 
   if (loading) return <Loading />;
@@ -29,5 +31,6 @@ export function FilePage({ kind }: { kind: FileKind }) {
   const common = { file: file as FileEntry };
   if (kind === "doc") return <div className="h-full"><DocEditor key={file.id} {...common} /></div>;
   if (kind === "sheet") return <div className="h-full"><SheetEditor key={file.id} {...common} /></div>;
+  if (kind === "canvas") return <div className="h-full"><CanvasEditor key={file.id} {...common} workspaceId={workspace.id} role={role} /></div>;
   return <BlobView key={file.id} {...common} workspaceId={workspace.id} role={role as Tree["role"]} />;
 }

@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api", tags=["files"])
 
 class FileIn(BaseModel):
     name: Name
-    kind: Literal[FileKind.doc, FileKind.sheet]  # blobs are created by upload only
+    kind: Literal[FileKind.doc, FileKind.sheet, FileKind.canvas]  # blobs are created by upload only
     folder_id: uuid.UUID | None = None
 
 

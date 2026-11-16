@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, File as FileIcon, FileText, Folder, FolderOpen, FolderPlus, MoreHorizontal, Plus, Table2, Upload, FileUp } from "lucide-react";
+import { ChevronRight, File as FileIcon, FileText, Folder, FolderOpen, FolderPlus, MoreHorizontal, PenTool, Plus, Table2, Upload, FileUp } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useRef, useState } from "react";
@@ -16,7 +16,7 @@ import { buildTree, type FolderNode } from "@/lib/tree";
 import { cn } from "@/lib/utils";
 
 export const fileHref = (f: Pick<FileEntry, "id" | "kind">) => `/app/${f.kind === "blob" ? "file" : f.kind}/${f.id}`;
-export const KIND_ICON: Record<FileKind, React.ElementType> = { doc: FileText, sheet: Table2, blob: FileIcon };
+export const KIND_ICON: Record<FileKind, React.ElementType> = { doc: FileText, sheet: Table2, blob: FileIcon, canvas: PenTool };
 
 type Dialog =
   | { type: "name"; title: string; label: string; initial?: string; confirm: string; submit: (name: string) => void }
@@ -40,8 +40,8 @@ export function useFileActions(workspaceId: string, tree: Tree | undefined, onNa
 
   const actions = {
     editable,
-    newFile: (kind: "doc" | "sheet", folderId: string | null) => setDialog({
-      type: "name", title: kind === "doc" ? "New doc" : "New sheet", label: "Name", initial: kind === "doc" ? "Untitled doc" : "Untitled sheet", confirm: "Create",
+    newFile: (kind: "doc" | "sheet" | "canvas", folderId: string | null) => setDialog({
+      type: "name", title: `New ${kind}`, label: "Name", initial: `Untitled ${kind}`, confirm: "Create",
       submit: (name) => { done(); createFile.mutate({ name, kind, folder_id: folderId }, { onSuccess: (f) => go(fileHref(f)), onError: (e) => toast.error(message(e)) }); },
     }),
     newFolder: (parentId: string | null) => setDialog({
@@ -94,6 +94,7 @@ export function NewMenu({ actions, folderId = null, trigger }: { actions: Action
       <DropdownMenuContent align="start" className="w-48">
         <DropdownMenuItem onSelect={() => actions.newFile("doc", folderId)}><FileText /> New doc</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => actions.newFile("sheet", folderId)}><Table2 /> New sheet</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => actions.newFile("canvas", folderId)}><PenTool /> New canvas</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => actions.newFolder(folderId)}><FolderPlus /> New folder</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => actions.pickUpload(folderId)}><Upload /> Upload a file</DropdownMenuItem>
@@ -153,6 +154,7 @@ export function FileTree({ tree, actions, onNavigate }: { tree: Tree; actions: A
           <ItemMenu label={`Actions for ${n.name}`}>
             <DropdownMenuItem onSelect={() => actions.newFile("doc", n.id)}>New doc here</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => actions.newFile("sheet", n.id)}>New sheet here</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => actions.newFile("canvas", n.id)}>New canvas here</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => actions.newFolder(n.id)}>New folder here</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => actions.pickUpload(n.id)}>Upload here</DropdownMenuItem>
             <DropdownMenuSeparator />
