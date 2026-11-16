@@ -29,7 +29,7 @@ flag and swap `@tailwindcss/postcss` for the Turbopack loader, but nothing requi
 | `/app` | Workspace home: recent files and quick actions |
 | `/app/doc/[id]` | Doc editor (TipTap): slash menu, tables, code, comments, live carets, Ask Council |
 | `/app/sheet/[id]` | Sheet editor: typed columns, HyperFormula formulas, formula bar, collaborator selections |
-| `/app/canvas/[id]` | Canvas (Excalidraw) with collaborator pointers |
+| `/app/canvas/[id]` | Canvas (Excalidraw): single-user, persisted |
 | `/app/council` | AI Council: choose 3 to 6 seats, watch the discussion stream, insert the answer into a doc |
 | `/app/settings` | Profile, workspace, appearance, members |
 | `/admin`, `/admin/routing`, `/admin/audit`, `/admin/keys` | Admin console: health, usage, model routing, audit log, API keys |
@@ -52,8 +52,8 @@ The only module that does is `src/lib/data/index.ts`, which picks an implementat
 1. **Realtime.** Implement `CollabProvider` over Yjs and a WebSocket (`connect(docId, kind)`,
    `onPresence`, `onUpdate`, `onState`, `sendUpdate`, `disconnect`, `peers`). Return it from
    `createCollabProvider()` in `src/lib/data/index.ts` when `USE_MOCKS` is false. Presence positions are
-   in the coordinates of each editor (ProseMirror position for docs, row and column for sheets, x and y
-   for the canvas), so a Yjs awareness adapter maps straight onto them. The editors currently apply
+   in the coordinates of each editor (ProseMirror position for docs, row and column for sheets; canvases are
+   single-user and have no presence), so a Yjs awareness adapter maps straight onto them. The editors currently apply
    remote edits through `onUpdate` payloads; with Yjs you would bind TipTap's Collaboration extension
    and a `Y.Map` for cells instead, and keep `onPresence` for carets and selections.
 2. **Council.** Implement `CouncilClient.runCouncil({ prompt, seats, signal })` as an async stream of

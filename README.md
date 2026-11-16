@@ -25,6 +25,15 @@ delete, import, upload), live-collaborative docs and sheets with cursors and pre
 uploads with versions and download, members, per-user provider keys, and the AI Council.
 Canvases are real but **single-user** (saved automatically, no realtime, no images; see Known limitations). The admin console is labelled **Preview** and uses sample data.
 
+**Verified: Canvas.** Checked in a browser and working:
+- A canvas is a persisted, single-user file kind: created inside Files, and it survives a reload.
+- PNG and SVG export work.
+- Viewers get a read-only canvas.
+- A stale save from a second tab returns a 409 conflict state instead of overwriting.
+- No console or CSP errors on the canvas page.
+
+**Not included in Canvas:** realtime co-editing, images, version history.
+
 ## Setup
 
 Needs Docker with Compose. Nothing else for running; Node 22 and `uv` only for development.
@@ -266,8 +275,8 @@ Fix with the smallest change in `frontend/src/lib/security-headers.ts`, then set
   API. The scene is limited to 5 MiB (fixed in code, 413 above that) and 20,000 elements. Element links keep only
   http, https and mailto (others are dropped on save and on load). Viewers get view-only mode and the API rejects their saves
   (403); a role change reaches an open canvas within about 30 seconds (the file's tree is re-read) or at the next failed save.
-  PNG and SVG export run in the browser. Excalidraw loads its fonts from esm.sh (see the CSP section). Not verified in a browser yet:
-  see `docs/CANVAS_BROWSER_CHECK.md`.
+  PNG and SVG export run in the browser. Excalidraw loads its fonts from esm.sh (see the CSP section). Checked in a browser: persists after reload, viewer read-only, PNG/SVG export, clean console/CSP, and a two-tab stale save that shows a conflict. Role changes on an open canvas were not tested.
+  See `docs/CANVAS_BROWSER_CHECK.md`.
 - **The Admin console is a mock-data preview** and labelled so in the UI.
 - **GPL-3.0-or-later** for the whole repository, because HyperFormula (GPL) is linked into the web app.
 - **The council is a hypothesis.** Nothing here shows that several models plus critique beat a single model;
@@ -295,7 +304,7 @@ Fix with the smallest change in `frontend/src/lib/security-headers.ts`, then set
 
 | Cut or limited | Why |
 |---|---|
-| **No council provider has been run against its real API, including Groq, NVIDIA NIM and Ollama.** The Anthropic, OpenAI and Google adapters use the official SDKs and the OpenAI-compatible adapter uses the OpenAI SDK; all are tested against local stubs of each API (one contract suite; the Groq, NIM and Ollama stubs mimic those servers' reply shapes from their documented behaviour, not from recorded traffic), never the real services. For the compatible providers the model list, `max_tokens` spelling, usage fields and Ollama's `/api/tags` fallback are the likeliest to differ from the stubs. Model ids and prices were read from the vendors' pricing pages on 2026-11-15 and not otherwise verified; reasoning-effort/thinking parameters in particular may need adjusting for a given model. | The builder had no keys, and automated tests never call real APIs. First live run: use a small cap. |
+| **Only Gemini (Google) and Groq have been run live against their real APIs; NVIDIA NIM, OpenAI, Anthropic and Ollama have not.** The Anthropic, OpenAI and Google adapters use the official SDKs and the OpenAI-compatible adapter uses the OpenAI SDK; all are tested against local stubs of each API (one contract suite; the Groq, NIM and Ollama stubs mimic those servers' reply shapes from their documented behaviour, not from recorded traffic). The Anthropic, OpenAI, NIM and Ollama adapters were never run against the real services. For the compatible providers the model list, `max_tokens` spelling, usage fields and Ollama's `/api/tags` fallback are the likeliest to differ from the stubs. Model ids and prices were read from the vendors' pricing pages on 2026-11-15 and not otherwise verified; reasoning-effort/thinking parameters in particular may need adjusting for a given model. | Automated tests never call real APIs. For a first live run on any provider not listed as run live, use a small cap. |
 | A provider without a key takes part as a **demo seat** (canned text, labelled "demo" in the panel). | Lets one key be enough to try the flow. |
 | **The admin console is a preview.** It runs on sample data and carries a "Preview" label. | No backend exists for it yet. Docs, sheets, canvases, files, members, keys and the Council use the real API. |
 | **No realtime canvas, no canvas images, no canvas history.** | A live Yjs canvas would bypass the server-side checks (size cap, link sanitising, image rejection) and needs tombstones the stored schema drops; images need file storage. See `docs/ARCHITECTURE.md` (Canvas). |
