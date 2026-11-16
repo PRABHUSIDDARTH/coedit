@@ -14,20 +14,21 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar
 
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 
-import eval_runner  # noqa: E402
-import make_seed_data  # noqa: E402
-from schema import (  # noqa: E402
+import eval_runner
+import make_seed_data
+from schema import (
     Example,
     SchemaError,
     check_no_overlap,
     read_jsonl,
     write_jsonl,
 )
-from scoring import build_messages, parse_reply, score_example, summarize_scores  # noqa: E402
+from scoring import build_messages, parse_reply, score_example, summarize_scores
 
 
 def _ref_text(ex: Example) -> str:
@@ -134,23 +135,46 @@ class ScorerTests(unittest.TestCase):
             {"scores": {"clarity": 9, "concision": 1, "evidence": 0}, "rationale": "x"}
         )
         self.assertEqual(score_example(ex, too_high).items["in_range"], 0.0)
-        floaty = json.dumps({"scores": {"clarity": 3.5, "concision": 1, "evidence": 0},
-                             "rationale": "x"})
+        floaty = json.dumps(
+            {"scores": {"clarity": 3.5, "concision": 1, "evidence": 0}, "rationale": "x"}
+        )
         self.assertIs(score_example(ex, floaty).json_valid, False)  # ints only
 
     def test_critique_closeness_is_graded(self) -> None:
         ex = self.by_id["seed-critique-01"]
-        far = json.dumps({"scores": {"clarity": 0, "concision": 5, "evidence": 5}, "rationale": "x"})
+        far = json.dumps(
+            {"scores": {"clarity": 0, "concision": 5, "evidence": 5}, "rationale": "x"}
+        )
         s = score_example(ex, far)
         self.assertLess(s.items["score_closeness"], 0.5)
 
     def test_edits_must_be_grounded_verbatim(self) -> None:
         ex = self.by_id["seed-suggest-edits-01"]
-        bad = json.dumps({"changes": [{"location": "s1", "original": "text not in doc",
-                                       "replacement": "y", "reason": "r"}]})
+        bad = json.dumps(
+            {
+                "changes": [
+                    {
+                        "location": "s1",
+                        "original": "text not in doc",
+                        "replacement": "y",
+                        "reason": "r",
+                    }
+                ]
+            }
+        )
         self.assertEqual(score_example(ex, bad).items["grounded"], 0.0)
-        noop = json.dumps({"changes": [{"location": "s1", "original": "the the",
-                                        "replacement": "the the", "reason": "r"}]})
+        noop = json.dumps(
+            {
+                "changes": [
+                    {
+                        "location": "s1",
+                        "original": "the the",
+                        "replacement": "the the",
+                        "reason": "r",
+                    }
+                ]
+            }
+        )
         self.assertEqual(score_example(ex, noop).items["non_noop"], 0.0)
 
     def test_text_tasks(self) -> None:
@@ -159,8 +183,9 @@ class ScorerTests(unittest.TestCase):
         )
         rw = self.by_id["seed-rewrite-01"]
         self.assertEqual(score_example(rw, rw.input["passage"]).items["changed"], 0.0)
-        self.assertEqual(score_example(rw, "Sure! We refund in five business days.").items[
-            "no_preamble"], 0.0)
+        self.assertEqual(
+            score_example(rw, "Sure! We refund in five business days.").items["no_preamble"], 0.0
+        )
         ag = self.by_id["seed-agents-md-01"]
         self.assertEqual(score_example(ag, "# AGENTS.md\n\n## Stack\nx\n").items["sections"], 0.25)
         self.assertEqual(score_example(ag, "").total, 0.0)  # empty reply is a parse failure
@@ -185,9 +210,9 @@ class ScorerTests(unittest.TestCase):
 
 
 class _Err500(BaseHTTPRequestHandler):
-    seen_auth: list[str | None] = []
+    seen_auth: ClassVar[list[str | None]] = []
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         self.rfile.read(int(self.headers.get("Content-Length", "0")))
         _Err500.seen_auth.append(self.headers.get("Authorization"))
         self.send_response(500)
@@ -294,7 +319,11 @@ class PhraseMatchingTests(unittest.TestCase):
         ]
         for text, phrase in yes:
             self.assertTrue(c(text, phrase), (text, phrase))
-        no = [("Friday 4 January", "Friday 3 January"), ("a month", "30 days"), ("retrying", "retry")]
+        no = [
+            ("Friday 4 January", "Friday 3 January"),
+            ("a month", "30 days"),
+            ("retrying", "retry"),
+        ]
         for text, phrase in no:  # normalisation must not make everything match
             self.assertFalse(c(text, phrase), (text, phrase))
 
@@ -302,7 +331,9 @@ class PhraseMatchingTests(unittest.TestCase):
         d = make_seed_data.build()[2].to_dict()  # seed-rewrite-01
         d["checks"] = {"must_include": [["refund", "reimburse"], "five business days"]}
         ex = Example.from_dict(d)
-        self.assertEqual(score_example(ex, "We reimburse customers within five business days.").total, 1.0)
+        self.assertEqual(
+            score_example(ex, "We reimburse customers within five business days.").total, 1.0
+        )
         d["checks"] = {"must_include": [[]]}
         with self.assertRaises(SchemaError):
             Example.from_dict(d)
@@ -315,8 +346,10 @@ class PhraseMatchingTests(unittest.TestCase):
         self.assertEqual(lf(50, 40), 0.0)  # +25% -> 0
         self.assertEqual(lf(80, 40), 0.0)
         ex = next(e for e in make_seed_data.build() if e.id == "seed-summarize-01")  # limit 25
-        reply = ("The library is closed until about Friday for roof repairs, and borrowers need not return books "
-                 "while late fees are paused for the whole week, according to staff.")
+        reply = (
+            "The library is closed until about Friday for roof repairs, and borrowers need not return books "
+            "while late fees are paused for the whole week, according to staff."
+        )
         n = len(reply.split())
         self.assertTrue(25 < n < 31, n)
         s = score_example(ex, reply)

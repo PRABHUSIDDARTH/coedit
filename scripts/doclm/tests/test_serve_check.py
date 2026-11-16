@@ -9,16 +9,20 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import serve_hf  # noqa: E402  (torch is imported lazily inside main())
+import serve_hf
 
 
 def make_model(d: Path, shard_bytes: int = 1000, total: int = 2000, partial: bool = False) -> None:
     for n in serve_hf.NEEDED:
         (d / n).write_text("{}")
-    (d / "model.safetensors.index.json").write_text(json.dumps({
-        "metadata": {"total_size": total},
-        "weight_map": {"a": "m-1.safetensors", "b": "m-2.safetensors"},
-    }))
+    (d / "model.safetensors.index.json").write_text(
+        json.dumps(
+            {
+                "metadata": {"total_size": total},
+                "weight_map": {"a": "m-1.safetensors", "b": "m-2.safetensors"},
+            }
+        )
+    )
     for n in ("m-1.safetensors", "m-2.safetensors"):
         (d / n).write_bytes(b"x" * shard_bytes)
     if partial:
@@ -48,7 +52,9 @@ class CheckWeightsTests(unittest.TestCase):
     def test_resume_command_is_valid_shell(self) -> None:
         import subprocess
 
-        self.assertEqual(subprocess.run(["bash", "-n", "-c", serve_hf.RESUME_CMD]).returncode, 0)
+        self.assertEqual(
+            subprocess.run(["bash", "-n", "-c", serve_hf.RESUME_CMD], check=False).returncode, 0
+        )
 
 
 if __name__ == "__main__":

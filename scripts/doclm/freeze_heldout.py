@@ -26,8 +26,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from eval_runner import check_heldout_shape  # noqa: E402
-from schema import SchemaError, read_jsonl  # noqa: E402
+from eval_runner import check_heldout_shape
+from schema import SchemaError, read_jsonl
 
 REPO = HERE.parent.parent
 
@@ -35,7 +35,9 @@ REPO = HERE.parent.parent
 def freeze(src: Path, dst: Path, hash_file: Path, sidecar: Path | None = None) -> str:
     for p in [dst, hash_file] + ([sidecar] if sidecar else []):
         if p.exists():
-            raise SchemaError(f"refusing to overwrite existing {p.name}: a frozen set is never replaced")
+            raise SchemaError(
+                f"refusing to overwrite existing {p.name}: a frozen set is never replaced"
+            )
     if not src.exists():
         raise SchemaError(f"{src.name} not found")
     exs = read_jsonl(src)  # raises on any schema problem, never echoing content
@@ -66,7 +68,9 @@ def main() -> int:
     args = ap.parse_args()
     dst = Path(args.dst)
     try:
-        sha = freeze(Path(args.src), dst, Path(args.hash_file), dst.with_suffix(dst.suffix + ".sha256"))
+        sha = freeze(
+            Path(args.src), dst, Path(args.hash_file), dst.with_suffix(dst.suffix + ".sha256")
+        )
     except (SchemaError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

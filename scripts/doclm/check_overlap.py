@@ -24,14 +24,13 @@ Exit 0 = clean, 1 = overlap found, 2 = usage/data error.
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from schema import Example, SchemaError, read_jsonl  # noqa: E402
+from schema import Example, SchemaError, read_jsonl
 
 DATA = Path(__file__).resolve().parent / "data"
 NGRAM = 5
@@ -126,7 +125,7 @@ def find_overlaps(
 
 
 def assert_no_overlap(
-    train: list[Example], heldout: list[Example] | None = None, **kw: float | int
+    train: list[Example], heldout: list[Example] | None = None, **kw: float
 ) -> None:
     """Import this in data-build scripts and call it BEFORE writing any training file."""
     held = heldout if heldout is not None else read_jsonl(default_heldout())
@@ -159,8 +158,10 @@ def main() -> int:
         for h in hits[:50]:
             print(" ", h)
         return 1
-    print(f"OK: no overlap ({len(train)} training vs {len(held)} held-out, "
-          f"{NGRAM}-gram threshold {args.threshold})")
+    print(
+        f"OK: no overlap ({len(train)} training vs {len(held)} held-out, "
+        f"{NGRAM}-gram threshold {args.threshold})"
+    )
     return 0
 
 

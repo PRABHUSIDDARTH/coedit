@@ -52,7 +52,9 @@ def check_weights(path: str) -> list[str]:
             else:
                 have += f.stat().st_size
         if have < expected * 0.995:  # shard files carry small headers, so allow >= expected
-            problems.append(f"weights incomplete: {have / 1e9:.2f} GB of about {expected / 1e9:.2f} GB")
+            problems.append(
+                f"weights incomplete: {have / 1e9:.2f} GB of about {expected / 1e9:.2f} GB"
+            )
     partial = list((root / ".cache").rglob("*.incomplete")) if (root / ".cache").exists() else []
     if partial:
         problems.append(f"{len(partial)} partial download file(s) (*.incomplete) still present")
@@ -70,36 +72,54 @@ def main() -> int:
 
     problems = check_weights(args.model_path)  # before importing torch: fast, no GPU needed
     if problems:
-        print("docLM server NOT started: the base-model weights are missing or incomplete.", file=sys.stderr)
+        print(
+            "docLM server NOT started: the base-model weights are missing or incomplete.",
+            file=sys.stderr,
+        )
         for p in problems:
             print(f"  - {p}", file=sys.stderr)
-        print("\nResume the download in a separate terminal (it continues from the partial files):\n"
-              f"  {RESUME_CMD}\n", file=sys.stderr)
+        print(
+            "\nResume the download in a separate terminal (it continues from the partial files):\n"
+            f"  {RESUME_CMD}\n",
+            file=sys.stderr,
+        )
         return 3
     print(f"weights OK: {args.model_path}", flush=True)
     if args.check_only:
         return 0
 
+    import time
+
     import torch  # imported late so --help works without the training env
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    import time
-
     if not torch.cuda.is_available():  # never fall back to CPU silently
-        print("ERROR: torch.cuda.is_available() is False; refusing to run on CPU. "
-              f"torch={torch.__version__} cuda_build={torch.version.cuda}", file=sys.stderr)
+        print(
+            "ERROR: torch.cuda.is_available() is False; refusing to run on CPU. "
+            f"torch={torch.__version__} cuda_build={torch.version.cuda}",
+            file=sys.stderr,
+        )
         return 4
     t0 = time.perf_counter()
     tok = AutoTokenizer.from_pretrained(args.model_path)
     model = AutoModelForCausalLM.from_pretrained(args.model_path, dtype=torch.bfloat16).cuda()
     load_s = time.perf_counter() - t0
     p0 = next(model.parameters())
-    print(json.dumps({
-        "load_seconds": round(load_s, 1), "device": str(p0.device),
-        "gpu": torch.cuda.get_device_name(0), "capability": list(torch.cuda.get_device_capability(0)),
-        "param_dtype": str(p0.dtype), "torch": torch.__version__, "cuda_build": torch.version.cuda,
-        "vram_allocated_mib": torch.cuda.memory_allocated() // 2**20,
-    }), flush=True)
+    print(
+        json.dumps(
+            {
+                "load_seconds": round(load_s, 1),
+                "device": str(p0.device),
+                "gpu": torch.cuda.get_device_name(0),
+                "capability": list(torch.cuda.get_device_capability(0)),
+                "param_dtype": str(p0.dtype),
+                "torch": torch.__version__,
+                "cuda_build": torch.version.cuda,
+                "vram_allocated_mib": torch.cuda.memory_allocated() // 2**20,
+            }
+        ),
+        flush=True,
+    )
     if args.adapter:
         from peft import PeftModel
 
@@ -108,7 +128,7 @@ def main() -> int:
     lock = threading.Lock()
 
     class H(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
             if not self.path.rstrip("/").endswith("/chat/completions"):
                 self.send_error(404)
                 return
@@ -121,13 +141,23 @@ def main() -> int:
                 out = model.generate(**enc, max_new_tokens=max_new, do_sample=False)
             n_in = enc["input_ids"].shape[1]
             text = tok.decode(out[0][n_in:], skip_special_tokens=True)
-            body = json.dumps({
-                "model": args.name,
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": text},
-                             "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": n_in, "completion_tokens": int(out.shape[1] - n_in),
-                          "peak_vram_mib": torch.cuda.max_memory_allocated() // 2**20},
-            }).encode()
+            body = json.dumps(
+                {
+                    "model": args.name,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": text},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": n_in,
+                        "completion_tokens": int(out.shape[1] - n_in),
+                        "peak_vram_mib": torch.cuda.max_memory_allocated() // 2**20,
+                    },
+                }
+            ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))

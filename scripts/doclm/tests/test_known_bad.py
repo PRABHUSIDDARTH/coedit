@@ -14,8 +14,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 
-from schema import TASKS, read_jsonl  # noqa: E402
-from scoring import score_example  # noqa: E402
+from schema import TASKS, read_jsonl
+from scoring import score_example
 
 DATA = HERE / "data"
 BAD_MAX = 0.3
@@ -54,20 +54,33 @@ class KnownBadTests(unittest.TestCase):
     def test_good_and_bad_are_separated(self) -> None:
         for hid in {b["heldout_id"] for b in self.bad}:
             ex = self.held[hid]
-            ref = json.dumps(ex.reference) if ex.task in ("critique", "suggest_edits") else ex.reference["text"]
+            ref = (
+                json.dumps(ex.reference)
+                if ex.task in ("critique", "suggest_edits")
+                else ex.reference["text"]
+            )
             self.assertEqual(score_example(ex, ref).total, 1.0, hid)
 
     def test_strict_json_tasks_report_invalid_json_for_non_json_bad_outputs(self) -> None:
         for b in self.bad:
             if b["task"] in ("critique", "suggest_edits") and b["kind"] in (
-                "empty", "truncated", "off_topic", "input_copied"
+                "empty",
+                "truncated",
+                "off_topic",
+                "input_copied",
             ):
                 s = score_example(self.held[b["heldout_id"]], b["reply"])
                 self.assertIs(s.json_valid, False, b["id"])
 
     def test_scorer_edge_rules(self) -> None:
         ex = self.held["ho-summarize-01"]
-        self.assertEqual(score_example(ex, "Council voted 7-2 to extend the Harbor Road bike lane by 3 km, funded by a grant").total, 0.0)  # cut off
+        self.assertEqual(
+            score_example(
+                ex,
+                "Council voted 7-2 to extend the Harbor Road bike lane by 3 km, funded by a grant",
+            ).total,
+            0.0,
+        )  # cut off
         ed = self.held["ho-suggest-edits-04"]  # document is fine: no changes is the right answer
         self.assertEqual(score_example(ed, '{"changes": []}').total, 1.0)
 

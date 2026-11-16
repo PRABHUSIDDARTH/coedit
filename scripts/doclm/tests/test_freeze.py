@@ -19,8 +19,19 @@ V1 = HERE / "data" / "heldout.v1.jsonl"
 
 def run(src: Path, dst: Path, hf: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(HERE / "freeze_heldout.py"), "--src", str(src), "--dst", str(dst),
-         "--hash-file", str(hf)], capture_output=True, text=True,
+        [
+            sys.executable,
+            str(HERE / "freeze_heldout.py"),
+            "--src",
+            str(src),
+            "--dst",
+            str(dst),
+            "--hash-file",
+            str(hf),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
 

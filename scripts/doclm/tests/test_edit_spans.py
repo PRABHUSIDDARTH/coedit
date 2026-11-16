@@ -10,9 +10,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 
-import make_seed_data  # noqa: E402
-from schema import EditsOutput, read_jsonl  # noqa: E402
-from scoring import _apply, _find_span, score_example  # noqa: E402
+import make_seed_data
+from schema import EditsOutput, read_jsonl
+from scoring import _apply, _find_span, score_example
 
 HELD = {e.id: e for e in read_jsonl(HERE / "data" / "heldout.draft.jsonl")}
 SEED = {e.id: e for e in make_seed_data.build()}
@@ -43,7 +43,9 @@ class EditSpanTests(unittest.TestCase):
         self.assertEqual(s.items["precision"], 0.0)
 
     def test_short_substring_overlap_is_not_a_fix(self) -> None:
-        ex = SEED["seed-suggest-edits-01"]  # old scorer: "the" is a substring of the error, recall 1.0
+        ex = SEED[
+            "seed-suggest-edits-01"
+        ]  # old scorer: "the" is a substring of the error, recall 1.0
         self.assertEqual(score_example(ex, reply(chg("the", "a"))).items["recall"], 0.0)
 
     def test_minimal_and_whole_sentence_fixes_both_count(self) -> None:
@@ -51,13 +53,24 @@ class EditSpanTests(unittest.TestCase):
         doc = ex.input["document"]
         self.assertEqual(score_example(ex, reply(chg("the the", "the"))).total, 1.0)
         self.assertEqual(
-            score_example(ex, reply(chg(doc, "The team has finished the migration and is now testing the new database."))).total,
+            score_example(
+                ex,
+                reply(
+                    chg(
+                        doc,
+                        "The team has finished the migration and is now testing the new database.",
+                    )
+                ),
+            ).total,
             1.0,
         )
 
     def test_spurious_change_lowers_score_but_not_recall(self) -> None:
         ex = HELD["ho-suggest-edits-08"]
-        good = [chg("password click", "password, click"), chg("new password it must", "new password. It must")]
+        good = [
+            chg("password click", "password, click"),
+            chg("new password it must", "new password. It must"),
+        ]
         self.assertEqual(score_example(ex, reply(*good)).total, 1.0)
         s = score_example(ex, reply(*good, chg("To reset", "In order to reset")))
         self.assertEqual(s.items["recall"], 1.0)
@@ -72,7 +85,9 @@ class EditSpanTests(unittest.TestCase):
         self.assertAlmostEqual(half.items["recall"], 0.5)
 
     def test_meaning_altering_rewording_is_spurious_and_misses_the_fix(self) -> None:
-        ex = HELD["ho-suggest-edits-07"]  # real fix: the wordy clause; model reworded two other clauses
+        ex = HELD[
+            "ho-suggest-edits-07"
+        ]  # real fix: the wordy clause; model reworded two other clauses
         r = reply(
             chg("Data are collected every hour", "Data are collected at regular intervals"),
             chg("stored for thirty days", "stored for a period of thirty days"),
@@ -85,11 +100,15 @@ class EditSpanTests(unittest.TestCase):
     def test_document_needing_no_change(self) -> None:
         ex = HELD["ho-suggest-edits-04"]
         self.assertEqual(score_example(ex, reply()).total, 1.0)
-        self.assertEqual(score_example(ex, reply(chg("customers like it", "customers appreciate it"))).total, 0.0)
+        self.assertEqual(
+            score_example(ex, reply(chg("customers like it", "customers appreciate it"))).total, 0.0
+        )
 
     def test_ungrounded_change_is_spurious(self) -> None:
         ex = HELD["ho-suggest-edits-01"]
-        s = score_example(ex, reply(chg("the the", "the"), chg("text that is not in the document", "x")))
+        s = score_example(
+            ex, reply(chg("the the", "the"), chg("text that is not in the document", "x"))
+        )
         self.assertEqual(s.items["grounded"], 0.5)
         self.assertEqual(s.items["precision"], 0.5)
 

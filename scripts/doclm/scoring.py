@@ -17,24 +17,21 @@ from schema import (
     INPUT_TYPES,
     OUTPUT_TYPES,
     STRICT_JSON_TASKS,
-    CritiqueInput,
-    CritiqueOutput,
-    EditsInput,
     Change,
+    CritiqueOutput,
     EditsOutput,
     Example,
     SchemaError,
-    SummarizeInput,
     TextOutput,
 )
 
 AGENTS_SECTIONS = ("stack", "commands", "conventions", "definition of done")
 ARCH_SECTIONS = ("overview", "components", "data flow", "decisions", "risks")
-PREAMBLE = re.compile(r"^\s*(sure|certainly|of course|here is|here's|okay|ok,)", re.I)
+PREAMBLE = re.compile(r"^\s*(sure|certainly|of course|here is|here's|okay|ok,)", re.IGNORECASE)
 
 SYSTEM_PROMPTS = {
     "critique": (
-        'TASK: critique\nScore the document against each rubric item. Reply with ONE JSON object '
+        "TASK: critique\nScore the document against each rubric item. Reply with ONE JSON object "
         'and nothing else (no code fences): {"scores": {"<rubric id>": <integer 0..max>}, '
         '"rationale": "<at most 80 words>"}. Use every rubric id exactly once.'
     ),
@@ -57,7 +54,7 @@ SYSTEM_PROMPTS = {
         "Reply with the summary only."
     ),
     "suggest_edits": (
-        'TASK: suggest_edits\nSuggest edits as ONE JSON object and nothing else (no code fences): '
+        "TASK: suggest_edits\nSuggest edits as ONE JSON object and nothing else (no code fences): "
         '{"changes": [{"location": "...", "original": "<exact text copied from the document>", '
         '"replacement": "...", "reason": "..."}]}. An empty list is allowed.'
     ),
@@ -73,7 +70,6 @@ def _wrap(tag_text: str) -> str:
 def build_messages(ex: Example) -> list[dict[str, str]]:
     inp = INPUT_TYPES[ex.task].from_dict(ex.input)
     if ex.task == "critique":
-        assert isinstance(inp, CritiqueInput)
         rub = "\n".join(f"- {r.id} (0..{r.max_score}): {r.description}" for r in inp.rubric)
         user = f"Rubric:\n{rub}\n\nDocument:\n{_wrap(inp.document)}"
     elif ex.task == "rewrite":
@@ -82,7 +78,6 @@ def build_messages(ex: Example) -> list[dict[str, str]]:
     elif ex.task in ("agents_md", "architecture_md"):
         user = f"Brief:\n{_wrap(inp.brief)}"
     elif ex.task == "summarize":
-        assert isinstance(inp, SummarizeInput)
         user = f"Max words: {inp.max_words}\n\nDocument:\n{_wrap(inp.document)}"
     else:
         user = f"Document:\n{_wrap(inp.document)}"
@@ -127,10 +122,20 @@ def parse_reply(task: str, text: str) -> Any:
 # HARD items are explicit constraints; failing any of them zeroes the example.
 HARD = frozenset({"parse", "complete", "changed", "shorter_than_source", "ids_exact", "in_range"})
 CONTENT = frozenset(
-    {"must_include", "sections", "score_closeness", "recall", "precision", "no_false_positive",
-     "unknown_fields"}
+    {
+        "must_include",
+        "sections",
+        "score_closeness",
+        "recall",
+        "precision",
+        "no_false_positive",
+        "unknown_fields",
+    }
 )
-PENALTIES = ("must_not_include", "within_limit")  # multiply the total; passing earns nothing on its own
+PENALTIES = (
+    "must_not_include",
+    "within_limit",
+)  # multiply the total; passing earns nothing on its own
 LIMIT_GRACE = 0.25  # summaries may exceed max_words by up to 25%, with a linear penalty
 
 
@@ -273,7 +278,9 @@ def _words(s: str) -> int:
 
 
 def _headings(md: str) -> list[str]:
-    return [m.group(1).strip().lower() for m in re.finditer(r"^#{1,6}\s+(.+?)\s*$", md, re.M)]
+    return [
+        m.group(1).strip().lower() for m in re.finditer(r"^#{1,6}\s+(.+?)\s*$", md, re.MULTILINE)
+    ]
 
 
 def _section_cov(md: str, required: tuple[str, ...]) -> float:
@@ -281,15 +288,47 @@ def _section_cov(md: str, required: tuple[str, ...]) -> float:
     return sum(any(req in h for h in heads) for req in required) / len(required)
 
 
-_MONTHS = (
-    "january february march april may june july august september october november december"
-).split()
+_MONTHS = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+]
 _MONTH_RE = "|".join(_MONTHS)
 _NUMWORDS = {
     w: str(i)
     for i, w in enumerate(
-        "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
-        "fifteen sixteen seventeen eighteen nineteen twenty".split()
+        [
+            "zero",
+            "one",
+            "two",
+            "three",
+            "four",
+            "five",
+            "six",
+            "seven",
+            "eight",
+            "nine",
+            "ten",
+            "eleven",
+            "twelve",
+            "thirteen",
+            "fourteen",
+            "fifteen",
+            "sixteen",
+            "seventeen",
+            "eighteen",
+            "nineteen",
+            "twenty",
+        ]
     )
 }
 _NUMWORDS.update({"thirty": "30", "forty": "40", "fifty": "50", "sixty": "60", "hundred": "100"})
@@ -368,7 +407,9 @@ def _phrases(text: str, ex: Example) -> dict[str, float]:
     inc = ex.checks.get("must_include", [])
     exc = ex.checks.get("must_not_include", [])
     if inc:
-        out["must_include"] = sum(any(contains_phrase(text, a) for a in _alts(e)) for e in inc) / len(inc)
+        out["must_include"] = sum(
+            any(contains_phrase(text, a) for a in _alts(e)) for e in inc
+        ) / len(inc)
     if exc:
         out["must_not_include"] = 1.0 - sum(contains_phrase(text, p) for p in exc) / len(exc)
     return out
@@ -400,7 +441,6 @@ def score_example(ex: Example, reply: str) -> Score:
     inp = INPUT_TYPES[ex.task].from_dict(ex.input)
 
     if ex.task == "critique":
-        assert isinstance(out, CritiqueOutput) and isinstance(inp, CritiqueInput)
         ids = {r.id: r.max_score for r in inp.rubric}
         s.items["ids_exact"] = float(set(out.scores) == set(ids))
         in_range = [0 <= v <= ids[k] for k, v in out.scores.items() if k in ids]
@@ -408,12 +448,13 @@ def score_example(ex: Example, reply: str) -> Score:
         s.items["rationale_len"] = float(_words(out.rationale) <= 80)
         if ex.reference:  # closeness to the human scores, normalised by each item's range
             ref = CritiqueOutput.from_dict(ex.reference).scores
-            errs = [abs(out.scores[k] - ref[k]) / ids[k] for k in ids if k in out.scores and k in ref]
+            errs = [
+                abs(out.scores[k] - ref[k]) / ids[k] for k in ids if k in out.scores and k in ref
+            ]
             if errs:
                 s.items["score_closeness"] = max(0.0, 1.0 - sum(errs) / len(errs))
     elif ex.task == "rewrite":
-        assert isinstance(out, TextOutput)
-        orig = getattr(inp, "passage")
+        orig = inp.passage
         s.items["complete"] = _complete(out.text)
         s.items["changed"] = float(out.text.strip() != orig.strip())
         ratio = _words(out.text) / max(1, _words(orig))
@@ -421,25 +462,21 @@ def score_example(ex: Example, reply: str) -> Score:
         s.items["no_preamble"] = float(not PREAMBLE.match(out.text))
         s.items.update(_phrases(out.text, ex))
     elif ex.task == "agents_md":
-        assert isinstance(out, TextOutput)
         s.items["sections"] = _section_cov(out.text, AGENTS_SECTIONS)
         s.items["no_preamble"] = float(not PREAMBLE.match(out.text))
         s.items.update(_phrases(out.text, ex))
         s.items.update(_unknown_fields(out.text, ex))
     elif ex.task == "architecture_md":
-        assert isinstance(out, TextOutput)
         s.items["sections"] = _section_cov(out.text, ARCH_SECTIONS)
         s.items["no_preamble"] = float(not PREAMBLE.match(out.text))
         s.items.update(_phrases(out.text, ex))
         s.items.update(_unknown_fields(out.text, ex))
     elif ex.task == "summarize":
-        assert isinstance(out, TextOutput) and isinstance(inp, SummarizeInput)
         s.items["complete"] = _complete(out.text)
         s.items["within_limit"] = limit_factor(_words(out.text), inp.max_words)
         s.items["shorter_than_source"] = float(_words(out.text) < _words(inp.document))
         s.items.update(_phrases(out.text, ex))
     elif ex.task == "suggest_edits":
-        assert isinstance(out, EditsOutput) and isinstance(inp, EditsInput)
         doc = inp.document
         spans = [_find_span(doc, c.original) for c in out.changes]
         if out.changes:  # `original` must be copied verbatim from the document
@@ -447,7 +484,9 @@ def score_example(ex: Example, reply: str) -> Score:
             s.items["has_reason"] = float(all(c.reason.strip() for c in out.changes))
         else:
             s.items["grounded"] = 1.0
-        s.items["non_noop"] = float(all(c.original != c.replacement for c in out.changes))  # no-op = noise
+        s.items["non_noop"] = float(
+            all(c.original != c.replacement for c in out.changes)
+        )  # no-op = noise
         expected = EditsOutput.from_dict(ex.reference).changes if ex.reference is not None else None
         if expected is not None:
             s.items.update(_score_edit_spans(ex, doc, out.changes, spans, expected))

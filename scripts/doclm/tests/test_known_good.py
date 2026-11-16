@@ -14,8 +14,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 
-from schema import TASKS, read_jsonl  # noqa: E402
-from scoring import score_example  # noqa: E402
+from schema import TASKS, read_jsonl
+from scoring import score_example
 
 DATA = HERE / "data"
 GOOD_MIN, BAD_MAX = 0.8, 0.3
@@ -52,7 +52,13 @@ class BothDirectionsTests(unittest.TestCase):
                 continue
             s = score_example(self.ex[g["heldout_id"]], g["reply"])
             if s.total < GOOD_MIN:
-                low.append((g["id"], round(s.total, 2), {k: round(v, 2) for k, v in s.items.items() if v < 1}))
+                low.append(
+                    (
+                        g["id"],
+                        round(s.total, 2),
+                        {k: round(v, 2) for k, v in s.items.items() if v < 1},
+                    )
+                )
         self.assertEqual(low, [])
 
     def test_ambiguous_variants_are_explained_and_few(self) -> None:
@@ -70,7 +76,11 @@ class BothDirectionsTests(unittest.TestCase):
 
     def test_every_reference_still_scores_1(self) -> None:
         for ex in self.ex.values():
-            ref = json.dumps(ex.reference) if ex.task in ("critique", "suggest_edits") else ex.reference["text"]
+            ref = (
+                json.dumps(ex.reference)
+                if ex.task in ("critique", "suggest_edits")
+                else ex.reference["text"]
+            )
             self.assertEqual(score_example(ex, ref).total, 1.0, ex.id)
 
 

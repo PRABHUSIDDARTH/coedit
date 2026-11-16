@@ -10,8 +10,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 
-from schema import Example, read_jsonl  # noqa: E402
-from scoring import score_example  # noqa: E402
+from schema import Example, read_jsonl
+from scoring import score_example
 
 HELD = {e.id: e for e in read_jsonl(HERE / "data" / "heldout.draft.jsonl")}
 
@@ -33,7 +33,10 @@ INVENTED = """# AGENTS.md
 - Code is written and follows the project's coding standards.
 - All tests pass with `pytest`.
 """
-HONEST = INVENTED.split("## Definition of Done")[0] + "## Definition of Done\nNot specified in the brief.\n"
+HONEST = (
+    INVENTED.split("## Definition of Done")[0]
+    + "## Definition of Done\nNot specified in the brief.\n"
+)
 
 
 class UnknownFieldTests(unittest.TestCase):

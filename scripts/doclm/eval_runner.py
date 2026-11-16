@@ -33,8 +33,8 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from schema import STRICT_JSON_TASKS, TASKS, Example, SchemaError, read_jsonl  # noqa: E402
-from scoring import Score, build_messages, score_example, summarize_scores  # noqa: E402
+from schema import TASKS, Example, SchemaError, read_jsonl
+from scoring import Score, build_messages, score_example, summarize_scores
 
 HERE = Path(__file__).resolve().parent
 HELDOUT_TOTAL = 50
@@ -89,9 +89,14 @@ class Endpoint:
 
     def chat(self, messages: list[dict[str, str]], max_tokens: int) -> tuple[str, str | None]:
         """Return (reply_text, error_label). error_label never contains a response body."""
-        body = json.dumps({
-            "model": self.model, "messages": messages, "temperature": 0, "max_tokens": max_tokens,
-        }).encode()
+        body = json.dumps(
+            {
+                "model": self.model,
+                "messages": messages,
+                "temperature": 0,
+                "max_tokens": max_tokens,
+            }
+        ).encode()
         headers = {"Content-Type": "application/json"}
         if self._key:
             headers["Authorization"] = f"Bearer {self._key}"
@@ -126,7 +131,7 @@ def _stub_reply(system: str, user: str) -> str:
 
 
 class _Stub(BaseHTTPRequestHandler):
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         n = int(self.headers.get("Content-Length", "0"))
         req = json.loads(self.rfile.read(n))
         msgs = req["messages"]
@@ -171,7 +176,8 @@ def render_table(label: str, summary: dict[str, dict[str, Any]], note: str = "")
 
 def render_compare(base: dict[str, Any], tuned: dict[str, Any]) -> str:
     lines = [
-        f"# Base vs docLM ({base['label']} vs {tuned['label']})", "",
+        f"# Base vs docLM ({base['label']} vs {tuned['label']})",
+        "",
         "| task | n | base | docLM | delta | base JSON-valid | docLM JSON-valid |",
         "|---|---|---|---|---|---|---|",
     ]
@@ -234,12 +240,24 @@ def run(args: argparse.Namespace) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     result = {
-        "label": label, "model": model, "dry_run": bool(args.dry_run), "data": data.name,
-        "data_sha256": sha256_file(data), "errors": errors, "summary": summary,
+        "label": label,
+        "model": model,
+        "dry_run": bool(args.dry_run),
+        "data": data.name,
+        "data_sha256": sha256_file(data),
+        "errors": errors,
+        "summary": summary,
         "items": [
-            {"id": s.id, "task": s.task, "total": s.total, "json_valid": s.json_valid,
-             "json_valid_lenient": s.json_valid_lenient, "fenced": s.fenced,
-             "items": s.items, "note": s.note}
+            {
+                "id": s.id,
+                "task": s.task,
+                "total": s.total,
+                "json_valid": s.json_valid,
+                "json_valid_lenient": s.json_valid_lenient,
+                "fenced": s.fenced,
+                "items": s.items,
+                "note": s.note,
+            }
             for s in scores
         ],
     }

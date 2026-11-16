@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import json
 import subprocess
 import sys
 import tempfile
@@ -13,8 +12,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 
-import check_overlap as co  # noqa: E402
-from schema import Example, read_jsonl, write_jsonl  # noqa: E402
+import check_overlap as co
+from schema import Example, read_jsonl, write_jsonl
 
 HELD = read_jsonl(co.default_heldout())
 SEED = read_jsonl(HERE / "data" / "seed.jsonl")
@@ -55,13 +54,21 @@ class OverlapTests(unittest.TestCase):
 
     def test_near_duplicate_with_edited_words_is_caught(self) -> None:
         src = by_id("ho-summarize-02")
-        doc = src.input["document"].replace("command palette", "quick launcher").replace("Windows 7", "Vista")
+        doc = (
+            src.input["document"]
+            .replace("command palette", "quick launcher")
+            .replace("Windows 7", "Vista")
+        )
         hits = co.find_overlaps([with_input(src, "document", doc)], HELD)
         self.assertTrue(any(h.kind == "ngram" and h.score >= co.THRESHOLD for h in hits), hits)
 
     def test_heldout_embedded_in_longer_training_text_is_caught(self) -> None:
         src = by_id("ho-summarize-03")
-        longer = "Unrelated opening sentence about gardens. " + src.input["document"] + " Unrelated closing."
+        longer = (
+            "Unrelated opening sentence about gardens. "
+            + src.input["document"]
+            + " Unrelated closing."
+        )
         self.assertTrue(co.find_overlaps([with_input(src, "document", longer)], HELD))
 
     def test_heldout_reference_leaking_into_training_target_is_caught(self) -> None:
@@ -76,7 +83,9 @@ class OverlapTests(unittest.TestCase):
         src = by_id("ho-critique-01")  # shares its rubric with many tasks
         d = copy.deepcopy(src.to_dict())
         d.update(id="train-clean-1", split="train", source="test-clean", reference=None)
-        d["input"]["document"] = "Quarterly shipping volume climbed because the new warehouse opened in Leeds."
+        d["input"]["document"] = (
+            "Quarterly shipping volume climbed because the new warehouse opened in Leeds."
+        )
         self.assertEqual(co.find_overlaps([Example.from_dict(d)], HELD), [])
 
     def test_threshold_is_a_real_boundary(self) -> None:
@@ -100,9 +109,14 @@ class OverlapTests(unittest.TestCase):
         self.assertNotIn(planted.input["document"][:30], str(cm.exception))
 
     def test_cli_exit_codes(self) -> None:
-        run = lambda *a: subprocess.run(  # noqa: E731
-            [sys.executable, str(HERE / "check_overlap.py"), *a], capture_output=True, text=True
-        )
+        def run(*a: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [sys.executable, str(HERE / "check_overlap.py"), *a],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
         with tempfile.TemporaryDirectory() as d:
             clean, dirty = Path(d, "clean.jsonl"), Path(d, "dirty.jsonl")
             write_jsonl(clean, SEED)
