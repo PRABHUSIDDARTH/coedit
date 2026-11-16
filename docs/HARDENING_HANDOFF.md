@@ -1,59 +1,61 @@
-# Hardening branch — handoff
+# Hardening branch — PR description
 
-Branch `hardening` (10 commits on top of `main` e337935). Nothing pushed. The stack from this branch
-(db, api, sync, web) was started with `docker compose up -d` to check healthchecks; it is still running.
+Branch `hardening`. Not pushed. Built from local `main` (e337935), which is **22 commits ahead of `origin/main`**
+(docLM scaffolding and one council fix), so a PR against `origin/main` shows 36 commits: 14 hardening ones and those 22.
 
-## Verified by automated tests
-- **Rate limiting** (item 3): `backend/tests/test_ratelimit.py`, 8 tests (window maths, 429 + Retry-After, case-insensitive email,
-  check happens before the password check, per-IP across emails, register separate from login, X-Forwarded-For ignored unless trusted).
-  Also run live through the :5173 proxy: 8×401 then 429 with `Retry-After: 900`.
-- **Session lifetime** (5b): `test_auth.py::test_session_lifetime_is_configurable_default_24h` (JWT exp and cookie Max-Age).
-- **Sync limits** (6): `sync/test/sync.test.ts` — connection cap per document (and slot freed on close), a 200 KiB frame against a
-  64 KiB cap closes with 1009, env parsing.
-- **Role re-check** (5a): same file — DB role beats the ticket's role, non-member with a valid ticket is refused, demoted editor / removed
-  member stop being able to edit while connected (mutation-checked: fails with re-validation off).
-- **Hocuspocus versions** (1): `sync/scripts/compat-check.ts` (not part of `make test`; run manually): 4.x↔4.x, 4.x↔3.x, 4.x viewer
-  read-only, 4.x bad ticket. All pass.
-- **Security headers** (4): `frontend/src/lib/security-headers.test.ts` (5 tests).
-- Gate: `make secrets-check` OK, `make lint` exit 0, `make test` exit 0 (backend 308, sync 18, frontend 58). Run with a `pnpm` shim
-  (`npx pnpm@12.21.0`) because pnpm is not installed on this host.
+## What this changes
+- **Network**: db/api/sync published on 127.0.0.1 only; no default DB password (compose refuses an empty one); `make env` generates
+  secrets (mode 600, never printed, refuses to overwrite). Optional `docker-compose.lan.yml` publishes sync for a two-device demo (README, with warning).
+- **Auth**: login/register rate limit (per IP and per email, in memory, 429 + `Retry-After`); `X-Forwarded-For` is believed only from peers in
+  `RATE_LIMIT_TRUSTED_PROXIES` (compose default: Docker bridge ranges = the bundled web proxy); session lifetime `SESSION_TTL_HOURS`, default 24.
+- **Sync**: membership looked up in Postgres on connect and every 30 s (removed/demoted members are disconnected); per-message size cap (8 MiB) and
+  per-document connection cap (50).
+- **Web**: CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy (HSTS opt-in `ENABLE_HSTS=1`).
+- **Ops**: healthchecks; sync and web containers non-root; shadcn CLI to devDependencies.
+- **Docs**: README Known limitations, ARCHITECTURE security notes, `docs/BROWSER_CHECK.md`.
 
-## Verified only by reading or by curl/docker (no browser, no test)
-- Headers on the production build, via `curl -D -` against `.next/standalone` on :3999: CSP, X-Frame-Options, nosniff, Referrer-Policy and
-  Permissions-Policy present on `/login` and `/app`, absent on `/api/*`. The page HTML contains inline `<script>` tags (hence `'unsafe-inline'`).
-- Compose: ports published on 127.0.0.1 (db, api, sync) via `ss -ltn` and `docker compose config`; an empty `POSTGRES_PASSWORD` makes compose
-  refuse to start; four services reach `healthy`; sync and web run as user `node`.
-- `make env` generator: run in a scratch directory only (mode 600, 32-byte base64 key, hex DB password, refuses to overwrite).
-  **Not run in this repo**: your existing `.env` was left untouched on purpose (the Postgres volume holds its password).
-- Excalidraw fonts: read from `node_modules` that it fetches fonts from esm.sh by default; the CSP allows `https://esm.sh` in `font-src`. Not checked live.
-- Not implemented: API → sync push disconnect on role change (the 30 s re-check covers it with a delay); total document size cap (Hocuspocus has
-  no option); non-root api container (its `blobs` volume is root-owned on existing installs; `docker compose run --rm --user root api chown -R <uid> /data/blobs` first);
-  server-side logout/revocation list. Dev-server CSP (the `'unsafe-eval'` branch) was unit-tested but the dev server was not started.
-- `npm audit` (sync): 0 vulnerabilities. `pnpm audit` (frontend): 13 (2 low, 4 moderate, 7 high); 11 are in production deps (nanoid ×8, lodash-es ×2, katex ×1,
-  per the advisory list). Not upgraded. Backend not audited (no pip-audit available offline).
+## Findings worth knowing
+- Hocuspocus server 3.4.4 vs browser provider 4.8.0: majors differ but `sync/scripts/compat-check.ts` syncs 4.x↔4.x and 4.x↔3.x; versions left as they are.
+- **The bundled Next proxy forwards the client IP but does not sanitise it** (measured): it sets `X-Forwarded-For` to the client address when the client sent
+  none and passes a client-supplied value through unchanged. So trusting the header from the web container makes honest users get their own bucket,
+  but with `:5173` exposed directly a client can choose its bucket; the per-email limit still holds. A reverse proxy that overwrites the header fixes that.
+  Without trust, every user would share one bucket (one client could lock everyone out), which is why compose trusts the bundled proxy.
+- The frontend sync URL is the page's hostname plus `:1234` (not hardcoded localhost), so the LAN demo needs no env change; the CSP allows `ws://*:1234`.
+- Frontend audit: 13 advisories (7 high); 11 (all high ones) come through `@excalidraw/excalidraw`, 2 are dev tooling. Not upgraded.
 
-## Check in a browser (http://localhost:5173, then http://127.0.0.1:5173 as a second user)
-Open DevTools → Console on each page and look for `Refused to ...` (CSP) messages. Rebuild first if you changed anything: `docker compose up -d --build web`.
-1. `/signup`, `/login`, sign out/in: pages render, styles intact (inline styles), no CSP errors.
-2. `/app` → open a **doc**: type, bold, a second user (127.0.0.1 profile) sees the caret live. The status bar must say connected (WebSocket to `:1234` allowed by `connect-src`).
-3. Open a **sheet**: edit `A1`, formulas evaluate (HyperFormula), second user sees it.
-4. Open the **canvas preview** (Excalidraw): it draws; note whether hand-drawn fonts load (esm.sh) or fall back; any `Refused to load` for fonts/workers/images.
-5. Council panel and Members panel load; file upload and a download still work.
-6. **Frame test**: save `<iframe src="http://localhost:5173/login">` in a local .html file and open it: the frame must be blocked.
-7. **Role change**: owner opens Members, demotes the second user (editor → viewer) while that user has a doc open. Within ~30 s the second user's editor
-   reconnects read-only (toolbar gone / typing does nothing). Then remove them: they lose access to the workspace.
-8. **Rate limit**: at `/login` submit a wrong password 9 times for one email → the 9th shows the error without crashing; `curl -i` shows 429 + `Retry-After`.
-   The bucket (shared IP of the web container) clears after 15 minutes or `docker compose restart api`.
-9. DevTools → Application → Cookies → `coedit_session`: lifetime about 24 hours.
-10. `docker compose ps`: db, api, sync, web all `healthy`.
+## Not in this PR but in its diff against origin/main (decide before merging)
+- `backend/app/council/prompts.py` + `backend/tests/test_parse_files.py`: council `parse_files` fence handling (commit 9f7bfa8). Not hardening.
+- docLM scaffolding under `scripts/doclm/` and `docs/doclm/` (22 commits).
+- **Tracked cache files** `scripts/doclm/.ruff_cache/**` (committed in 6c848ca; root `.gitignore` lists `.ruff_cache/` but they were added anyway).
+  Suggested follow-up: `git rm -r --cached scripts/doclm/.ruff_cache`. Not done here (docLM files were off limits).
+- **Held-out data**: `scripts/doclm/data/heldout.draft.jsonl` (50 draft tasks) is tracked and would be published. No frozen/v1 held-out file or hash file is tracked.
+  Your uncommitted edits to it and to `docs/doclm/SCORING.md` are not part of the branch.
+- Checked and clean: no `.env` (only `.env.example`, `frontend/.env.example`), keys, `node_modules` or `.venv` tracked; `make secrets-check` OK.
 
-## Push and open a PR
+## Verification status
+**In a browser: nothing.** The Chrome extension got `ERR_CONNECTION_REFUSED` for localhost/127.0.0.1 (likely a different machine from the stack), and the LAN
+address did not load. The manual checklist, with 14 checks, is `docs/BROWSER_CHECK.md`.
+
+**By automated tests** (`make test`: backend 311, sync 18, frontend 59; `make lint` and `make secrets-check` pass):
+rate limiter incl. spoofed header from an untrusted peer, trusted peer, garbage header, invalid CIDR (`test_ratelimit.py`); session lifetime; sync size and
+connection caps; DB role beats ticket role, demotion/removal while connected (mutation-checked); CSP/header builder; sync URL for a LAN hostname.
+`sync/scripts/compat-check.ts` (manual) passes. Frontend `pnpm test` was run twice, 1.3 s each: the earlier hang did not recur (it happened while a Docker build
+and the backend suite were also running; cause unknown).
+
+**By curl/docker/reading only**: response headers on the production build (CSP etc. present on pages, absent on `/api`); ports (`ss -ltn`, `compose config`);
+healthchecks and non-root users in the running stack; the Next proxy's `X-Forwarded-For` behaviour (local echo server); a 10-request login burst through :5173
+(8×401 then 429, `Retry-After: 900`, run before the trusted-proxy change); `docker-compose.lan.yml` merged ports.
+
+**Unverified**: that the CSP lets the editor, sheet, Excalidraw (including fonts from esm.sh) and WebSocket work in a real browser; the LAN demo between two real
+devices; that per-user IP buckets actually work end to end behind the proxy after the trusted-proxy change (unit-tested, not exercised live); api container
+non-root (not done); API-to-sync push on role change (not built); backend dependency audit (not run).
+
+## Push and open the PR
 ```bash
 cd /home/psTech/psTech/coedit
-git status --short                      # expect only docs/doclm/SCORING.md and scripts/doclm/data/heldout.draft.jsonl (your uncommitted docLM edits, untouched)
-git log --oneline main..hardening       # review the 10 commits
+git status --short                 # expect only docs/doclm/SCORING.md and scripts/doclm/data/heldout.draft.jsonl (your uncommitted docLM edits)
+git log --oneline origin/main..hardening
 git push -u origin hardening
-gh pr create --base main --head hardening --title "Hardening: network exposure, rate limits, headers, role re-check, limits" \
-  --body-file docs/HARDENING_HANDOFF.md
+gh pr create --base main --head hardening --title "Hardening: network exposure, rate limits, headers, role re-check, limits" --body-file docs/HARDENING_HANDOFF.md
 ```
-(`origin` is https://github.com/PRABHUSIDDARTH/coedit.git.)
+(`origin` is https://github.com/PRABHUSIDDARTH/coedit.git. To keep the PR to hardening only, first decide on the items under "Not in this PR".)
