@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_overlap import assert_no_overlap, default_heldout  # noqa: E402
 from schema import Example, write_jsonl  # noqa: E402
 
 SRC = "seed-handwritten (pipeline test only)"
@@ -142,6 +143,12 @@ def main() -> int:
     ap.add_argument("--out", default=str(Path(__file__).parent / "data" / "seed.jsonl"))
     args = ap.parse_args()
     ex = build()
+    try:  # every data-build step must check for held-out overlap BEFORE writing
+        default_heldout()
+    except Exception:  # noqa: BLE001 - no held-out file yet: nothing to compare against
+        pass
+    else:
+        assert_no_overlap(ex)
     n = write_jsonl(args.out, ex)
     print(json.dumps({"wrote": n, "path": args.out, "split": "seed"}))
     return 0

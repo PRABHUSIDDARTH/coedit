@@ -39,6 +39,11 @@ For a hosted endpoint that needs a key, pass the NAME of an env var, never the k
 `export DOCLM_API_KEY=...` then `--api-key-env DOCLM_API_KEY`. The key is read in memory, sent only
 as the `Authorization` header, and never printed or written. HTTP errors show the status code only.
 
+## Data-build rule
+
+Every script that writes training data must call `check_overlap.assert_no_overlap(examples)` before writing, or be followed by
+`python3 scripts/doclm/check_overlap.py --train <file>` (exit 1 = overlap). `make_seed_data.py` already does.
+
 ## Files
 
 | File | Purpose |
@@ -47,6 +52,9 @@ as the `Authorization` header, and never printed or written. HTTP errors show th
 | `scoring.py` | prompts, strict reply parsing, programmatic scoring, per-task summary |
 | `eval_runner.py` | runs a JSONL set against `/chat/completions`, writes `results/<label>.{md,json}`, `--freeze`, `--compare`, `--dry-run` |
 | `make_seed_data.py` | writes `data/seed.jsonl` (10 hand-written seeds, `split="seed"`) |
+| `check_overlap.py` | held-out leak guard: exact, normalized, 5-gram containment >= 0.40 |
+| `freeze_heldout.py` | one-shot freeze of the reviewed held-out file (see docs/doclm/HELDOUT_REVIEW.md) |
+| `serve_hf.py` | local OpenAI-compatible server over the HF weights (+ LoRA) for base/docLM scoring |
 | `tests/test_doclm.py` | schema, scorer, runner, key-handling tests |
 
 Data lines: `{"id","task","split":"seed|train|heldout","source","input":{...},"reference":{...},"checks":{...}}`.
