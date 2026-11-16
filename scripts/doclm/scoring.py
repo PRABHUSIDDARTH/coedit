@@ -20,6 +20,7 @@ from schema import (
     CritiqueInput,
     CritiqueOutput,
     EditsInput,
+    Change,
     EditsOutput,
     Example,
     SchemaError,
@@ -116,7 +117,9 @@ def parse_reply(task: str, text: str) -> Any:
 # alone earns nothing: a reply with the right shape but no right content scores near 0.
 # HARD items are explicit constraints; failing any of them zeroes the example.
 HARD = frozenset({"parse", "complete", "changed", "shorter_than_source", "ids_exact", "in_range"})
-CONTENT = frozenset({"must_include", "sections", "score_closeness", "recall", "no_false_positive"})
+CONTENT = frozenset(
+    {"must_include", "sections", "score_closeness", "recall", "precision", "no_false_positive"}
+)
 PENALTIES = ("must_not_include", "within_limit")  # multiply the total; passing earns nothing on its own
 LIMIT_GRACE = 0.25  # summaries may exceed max_words by up to 25%, with a linear penalty
 
@@ -152,6 +155,105 @@ def limit_factor(words: int, limit: int) -> float:
     """1.0 within the limit; falls linearly to 0.0 at limit * (1 + LIMIT_GRACE); 0.0 beyond.
     factor = 1 - (words/limit - 1) / LIMIT_GRACE, clamped to [0, 1]."""
     return max(0.0, min(1.0, 1.0 - (words / limit - 1.0) / LIMIT_GRACE))
+
+
+def _find_span(doc: str, original: str) -> tuple[int, int] | None:
+    """Character offsets (start, end) of the change's `original` in the document (first match)."""
+    i = doc.find(original) if original else -1
+    return None if i < 0 else (i, i + len(original))
+
+
+def _apply(doc: str, items: list[tuple[tuple[int, int], str]]) -> str:
+    """Apply replacements by offset, left to right, skipping any that overlap an earlier one."""
+    out, pos = [], 0
+    for (a, b), rep in sorted(items, key=lambda t: t[0]):
+        if a < pos:
+            continue
+        out += [doc[pos:a], rep]
+        pos = b
+    return "".join(out) + doc[pos:]
+
+
+def _edge_words(doc: str, span: tuple[int, int]) -> tuple[str, str]:
+    left = doc[: span[0]].split()
+    right = doc[span[1] :].split()
+    return (left[-1] if left else ""), (right[0] if right else "")
+
+
+def _collapse(t: str) -> str:
+    return re.sub(r"\s+", " ", t).strip().lower()
+
+
+def _span_fixed(
+    doc: str, span: tuple[int, int], original: str, accepted: list[str], fixed_doc: str
+) -> bool:
+    """Is the expected span fixed in `fixed_doc`? An accepted replacement, with one word of the
+    original context on each side, must appear in the edited document. Matching is normalised
+    (case, punctuation, dates, plurals) except for punctuation-only fixes, where punctuation
+    is the whole point and the comparison is raw (case-folded, whitespace-collapsed)."""
+    left, right = _edge_words(doc, span)
+    tokens, raw = norm_tokens(fixed_doc), _collapse(fixed_doc)
+    for alt in accepted:
+        if norm_tokens(alt) == norm_tokens(original):  # punctuation-only fix
+            if _collapse(f"{left} {alt} {right}") in raw:
+                return True
+            continue
+        want = norm_tokens(f"{left} {alt} {right}")
+        if any(tokens[i : i + len(want)] == want for i in range(len(tokens) - len(want) + 1)):
+            return True
+    return False
+
+
+# a change this much longer than the error it fixes is a rewrite, not a targeted edit
+_TARGET_SLACK = 60
+
+
+def _score_edit_spans(
+    ex: Example,
+    doc: str,
+    changes: tuple[Change, ...],
+    spans: list[tuple[int, int] | None],
+    expected: tuple[Change, ...],
+) -> dict[str, float]:
+    """Span-based scoring. recall: share of expected errors actually FIXED once the model's
+    changes are applied. precision: share of the model's changes that fix an expected error on
+    their own; everything else (wrong span, ungrounded, meaning-altering rewording, a change to
+    a document that needs none) is spurious. A document that needs no change: any change fails."""
+    if not expected:
+        return {"no_false_positive": float(not changes)}
+    inc = ex.checks.get("must_include", [])
+    exp_spans: list[tuple[tuple[int, int], str, list[str]]] = []
+    for i, r in enumerate(expected):
+        sp = _find_span(doc, r.original)
+        if sp is None:
+            continue  # reference does not match the document: caught by a test, never scored
+        alts = [r.replacement] + (_alts(inc[i]) if i < len(inc) else [])
+        exp_spans.append((sp, r.original, alts))
+    grounded = [(sp, c.replacement) for sp, c in zip(spans, changes, strict=True) if sp is not None]
+    fixed_all = _apply(doc, grounded)
+    touched = [sp for sp in spans if sp is not None]  # a change must actually touch the span
+
+    def overlap(a: tuple[int, int], b: tuple[int, int]) -> bool:
+        return a[0] < b[1] and b[0] < a[1]
+
+    fixed = sum(
+        any(overlap(sp, t) for t in touched) and _span_fixed(doc, sp, orig, alts, fixed_all)
+        for sp, orig, alts in exp_spans
+    )
+    useful = 0
+    for sp, c in zip(spans, changes, strict=True):
+        if sp is None:
+            continue
+        alone = _apply(doc, [(sp, c.replacement)])
+        for esp, orig, alts in exp_spans:
+            targeted = (sp[1] - sp[0]) <= 3 * (esp[1] - esp[0]) + _TARGET_SLACK
+            if overlap(sp, esp) and targeted and _span_fixed(doc, esp, orig, alts, alone):
+                useful += 1
+                break
+    return {
+        "recall": fixed / max(1, len(exp_spans)),
+        "precision": useful / len(changes) if changes else 1.0,
+    }
 
 
 def _words(s: str) -> int:
@@ -283,23 +385,17 @@ def score_example(ex: Example, reply: str) -> Score:
         s.items.update(_phrases(out.text, ex))
     elif ex.task == "suggest_edits":
         assert isinstance(out, EditsOutput) and isinstance(inp, EditsInput)
-        if out.changes:
-            ok = [c.original in inp.document for c in out.changes]
-            s.items["grounded"] = sum(ok) / len(ok)  # `original` must be copied verbatim
+        doc = inp.document
+        spans = [_find_span(doc, c.original) for c in out.changes]
+        if out.changes:  # `original` must be copied verbatim from the document
+            s.items["grounded"] = sum(sp is not None for sp in spans) / len(out.changes)
             s.items["has_reason"] = float(all(c.reason.strip() for c in out.changes))
         else:
             s.items["grounded"] = 1.0
-        # a "change" that changes nothing is noise
-        s.items["non_noop"] = float(all(c.original != c.replacement for c in out.changes))
-        if ex.reference is not None:
-            ref = EditsOutput.from_dict(ex.reference).changes
-            if ref:  # did it find the real problems? (substring match either way)
-                hit = [any(c.original in r.original or r.original in c.original for c in out.changes)
-                       for r in ref]
-                s.items["recall"] = sum(hit) / len(ref)
-            else:  # the document is fine: any suggested change is a false positive
-                s.items["no_false_positive"] = float(not out.changes)
-        s.items.update(_phrases(" ".join(c.replacement for c in out.changes), ex))
+        s.items["non_noop"] = float(all(c.original != c.replacement for c in out.changes))  # no-op = noise
+        expected = EditsOutput.from_dict(ex.reference).changes if ex.reference is not None else None
+        if expected is not None:
+            s.items.update(_score_edit_spans(ex, doc, out.changes, spans, expected))
     return s
 
 
