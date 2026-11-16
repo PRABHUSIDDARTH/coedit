@@ -12,9 +12,9 @@ from app.models import User
 from app.ratelimit import enforce
 from app.security import (
     SESSION_COOKIE,
-    SESSION_TTL,
     create_session_token,
     hash_password,
+    session_ttl,
     verify_password,
 )
 
@@ -45,7 +45,7 @@ def _set_session_cookie(response: Response, user: User) -> None:
     response.set_cookie(
         SESSION_COOKIE,
         create_session_token(user.id),
-        max_age=int(SESSION_TTL.total_seconds()),
+        max_age=int(session_ttl().total_seconds()),
         httponly=True,
         samesite="lax",
         secure=get_settings().web_origin.startswith("https://"),

@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # Where the browser reaches the sync server; a path is resolved against the page origin
     # (the web container proxies /sync to the sidecar).
     sync_public_url: str = "/sync"
+    # Session JWT and cookie lifetime. Logout only clears the cookie; a copied token stays valid
+    # until it expires (no server-side revocation list).
+    session_ttl_hours: int = Field(default=24, ge=1)
     # Login/register rate limits (in-memory, per process; 0 disables a limit). See app/ratelimit.py.
     rate_limit_window_seconds: int = Field(default=900, ge=1)
     rate_limit_ip_max: int = Field(default=30, ge=0)
