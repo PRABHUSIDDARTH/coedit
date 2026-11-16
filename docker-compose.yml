@@ -42,7 +42,10 @@ services:
       db: { condition: service_healthy }
 
   web:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        ENABLE_HSTS: ${ENABLE_HSTS:-}  # set to 1 in .env only when served over HTTPS
     environment:
       # The Next server proxies /api here. The browser opens the sync WebSocket itself, on port 1234
       # of the same host (the API tells it "/sync"; the app maps that to :1234).
