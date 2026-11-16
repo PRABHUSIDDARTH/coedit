@@ -13,7 +13,17 @@ from app.council import pipeline
 from app.db import engine
 from app.deps import csrf_guard
 from app.middleware import BodySizeLimitMiddleware
-from app.routers import auth, blobs, council, files, folders, settings, tickets, workspaces
+from app.routers import (
+    auth,
+    blobs,
+    canvas,
+    council,
+    files,
+    folders,
+    settings,
+    tickets,
+    workspaces,
+)
 from app.services import storage
 
 logging_redact.install()
@@ -52,6 +62,7 @@ for _router in (
     workspaces.router,
     folders.router,
     blobs.router,
+    canvas.router,
     files.router,
     tickets.router,
     settings.router,

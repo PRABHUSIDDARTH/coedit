@@ -20,6 +20,12 @@ MUTATING: list[tuple[str, str, dict | None, str]] = [
     ),
     ("PATCH", "/api/workspaces/{workspace_id}/members/{user_id}", {"role": "editor"}, "owner"),
     ("DELETE", "/api/workspaces/{workspace_id}/members/{user_id}", None, "owner"),
+    (
+        "PUT",
+        "/api/files/{file_id}/scene",
+        {"base_revision": 0, "scene": {"elements": []}},
+        "editor",
+    ),
     ("POST", "/api/workspaces/{workspace_id}/folders", {"name": "New"}, "editor"),
     ("PATCH", "/api/folders/{folder_id}", {"name": "Renamed"}, "editor"),
     ("DELETE", "/api/folders/{folder_id}", None, "editor"),
