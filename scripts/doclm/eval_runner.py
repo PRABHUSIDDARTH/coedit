@@ -154,12 +154,18 @@ def render_table(label: str, summary: dict[str, dict[str, Any]], note: str = "")
     lines = [f"# Eval results: {label}", ""]
     if note:
         lines += [note, ""]
-    lines += ["| task | n | mean score (0-1) | JSON-valid rate |", "|---|---|---|---|"]
+    lines += [
+        "| task | n | mean score (0-1) | JSON-valid rate (strict) | JSON-valid if unfenced | fenced |",
+        "|---|---|---|---|---|---|",
+    ]
     for t in TASKS:
         if t in summary:
             r = summary[t]
             jv = f"{r['json_valid_rate']:.0%}" if "json_valid_rate" in r else "n/a"
-            lines.append(f"| {t} | {r['n']} | {r['mean']:.3f} | {jv} |")
+            jl = f"{r['json_valid_lenient_rate']:.0%}" if "json_valid_lenient_rate" in r else "n/a"
+            lines.append(
+                f"| {t} | {r['n']} | {r['mean']:.3f} | {jv} | {jl} | {r.get('fenced_rate', 0):.0%} |"
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -232,6 +238,7 @@ def run(args: argparse.Namespace) -> int:
         "data_sha256": sha256_file(data), "errors": errors, "summary": summary,
         "items": [
             {"id": s.id, "task": s.task, "total": s.total, "json_valid": s.json_valid,
+             "json_valid_lenient": s.json_valid_lenient, "fenced": s.fenced,
              "items": s.items, "note": s.note}
             for s in scores
         ],

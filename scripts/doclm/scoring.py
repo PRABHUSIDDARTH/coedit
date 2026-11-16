@@ -95,6 +95,15 @@ def build_messages(ex: Example) -> list[dict[str, str]]:
 # ---------------------------------------------------------------- parsing
 
 
+def strip_outer_fence(text: str) -> tuple[str, bool]:
+    """If the reply is wrapped in ONE outer ``` fence (first line opens it, last line closes it),
+    return (inner text, True). Inner code blocks are left alone. Otherwise (text, False)."""
+    lines = text.strip().splitlines()
+    if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1]), True
+    return text, False
+
+
 def parse_reply(task: str, text: str) -> Any:
     """Parse a raw model reply into the task's output type. Raises SchemaError.
 
@@ -130,7 +139,9 @@ class Score:
     id: str
     task: str
     items: dict[str, float] = field(default_factory=dict)  # each in 0..1
-    json_valid: bool | None = None  # only for strict-JSON tasks
+    json_valid: bool | None = None  # only for strict-JSON tasks (strict: a fence makes it invalid)
+    json_valid_lenient: bool | None = None  # same, but after removing one outer fence (not scored)
+    fenced: bool = False  # reply wrapped in one outer ``` fence; recorded, never changes the score
     note: str = ""
 
     @property
@@ -366,6 +377,15 @@ def _phrases(text: str, ex: Example) -> dict[str, float]:
 def score_example(ex: Example, reply: str) -> Score:
     s = Score(id=ex.id, task=ex.task)
     strict = ex.task in STRICT_JSON_TASKS
+    unfenced, s.fenced = strip_outer_fence(reply)
+    if strict:  # JSON tasks stay strict; also record validity after unfencing
+        try:
+            parse_reply(ex.task, unfenced)
+            s.json_valid_lenient = True
+        except SchemaError:
+            s.json_valid_lenient = False
+    else:
+        reply = unfenced  # prose tasks: a single outer fence does not change the score
     try:
         out = parse_reply(ex.task, reply)
     except SchemaError as e:
@@ -441,8 +461,13 @@ def summarize_scores(scores: list[Score]) -> dict[str, dict[str, Any]]:
         by.setdefault(s.task, []).append(s)
     out: dict[str, dict[str, Any]] = {}
     for task, ss in by.items():
-        row: dict[str, Any] = {"n": len(ss), "mean": sum(x.total for x in ss) / len(ss)}
+        row: dict[str, Any] = {
+            "n": len(ss),
+            "mean": sum(x.total for x in ss) / len(ss),
+            "fenced_rate": sum(x.fenced for x in ss) / len(ss),
+        }
         if task in STRICT_JSON_TASKS:
             row["json_valid_rate"] = sum(bool(x.json_valid) for x in ss) / len(ss)
+            row["json_valid_lenient_rate"] = sum(bool(x.json_valid_lenient) for x in ss) / len(ss)
         out[task] = row
     return out
