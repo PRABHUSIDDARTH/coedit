@@ -30,16 +30,18 @@ Canvas and the admin console are labelled **Preview** and use sample data (see t
 Needs Docker with Compose. Nothing else for running; Node 22 and `uv` only for development.
 
 ```bash
-cp .env.example .env
-# Fill the three secrets. Each line below prints one value:
-python3 -c "import secrets,base64;print(base64.b64encode(secrets.token_bytes(32)).decode())"
-#   APP_SECRET=...          (session cookies)
-#   WS_TICKET_SECRET=...    (API -> sync tickets)
-#   KEY_ENCRYPTION_KEY=...  (must be base64 of exactly 32 bytes)
-
-docker compose up --build        # web :5173 · api :8000 · sync :1234 · db :5433 on the host
+make env                          # writes .env with random secrets (mode 600, gitignored, nothing printed)
+                                  # refuses to overwrite an existing .env
+docker compose up --build        # web :5173 · api :8000 · sync :1234 · db :5433, the last three on 127.0.0.1 only
 make seed SEED_PASSWORD='choose-a-password'   # optional demo data, in a second terminal
 ```
+
+**Network exposure.** Postgres, the API and the sync server are published on `127.0.0.1` only; only the
+web port (:5173) listens on all interfaces. The browser opens the sync WebSocket on port 1234 of the page's
+host, so a second machine opening `http://<your-ip>:5173` can use the app but cannot co-edit until you
+publish `:1234` yourself (or route `/sync` through a reverse proxy and set `NEXT_PUBLIC_SYNC_URL`).
+`.env.example` ships empty secrets on purpose, and `docker compose` refuses an empty `POSTGRES_PASSWORD`.
+An existing `.env` keeps working unchanged (the Postgres volume was initialised with its password).
 
 Open http://localhost:5173. Register, or after `make seed` sign in as `owner@example.com`,
 `editor@example.com` or `viewer@example.com` with the password you chose.

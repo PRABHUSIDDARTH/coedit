@@ -18,9 +18,17 @@ os.environ.setdefault("KEY_ENCRYPTION_KEY", base64.b64encode(b"k" * 32).decode()
 os.environ["BLOB_DIR"] = tempfile.mkdtemp(prefix="coedit-test-blobs-")
 
 # Tests run against a separate database (<name>_test) so they never touch dev/demo data.
-_BASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql+asyncpg://coedit:coedit@localhost:5433/coedit"
-)
+def _default_database_url() -> str:
+    # `make env` writes DATABASE_URL (with the generated password) into .env for host-side use.
+    from dotenv import dotenv_values
+
+    env_file = Path(__file__).resolve().parents[2] / ".env"
+    return dotenv_values(env_file).get("DATABASE_URL") or (
+        "postgresql+asyncpg://coedit:coedit@localhost:5433/coedit"
+    )
+
+
+_BASE_URL = os.environ.get("DATABASE_URL") or _default_database_url()
 _PREFIX, _DB_NAME = _BASE_URL.rsplit("/", 1)
 _TEST_DB = f"{_DB_NAME}_test"
 os.environ["DATABASE_URL"] = f"{_PREFIX}/{_TEST_DB}"

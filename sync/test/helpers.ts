@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -10,9 +11,19 @@ import { TICKET_AUDIENCE } from "../src/auth.ts";
 
 export const SECRET = "test-ws-ticket-secret-0123456789abcdef";
 
-const user = process.env.POSTGRES_USER ?? "coedit";
-const password = process.env.POSTGRES_PASSWORD ?? "coedit";
-const port = process.env.DB_PORT ?? "5433";
+// Fall back to the repo's .env (written by `make env`) so tests reach the compose database without
+// exporting anything; the password is only ever put in a connection string, never printed.
+function fromDotenv(key: string): string | undefined {
+  try {
+    const text = readFileSync(new URL("../../.env", import.meta.url), "utf8");
+    return text.match(new RegExp(`^${key}=(.*)$`, "m"))?.[1]?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+const user = process.env.POSTGRES_USER ?? fromDotenv("POSTGRES_USER") ?? "coedit";
+const password = process.env.POSTGRES_PASSWORD ?? fromDotenv("POSTGRES_PASSWORD") ?? "coedit";
+const port = process.env.DB_PORT ?? fromDotenv("DB_PORT") ?? "5433";
 const TEST_DB = "coedit_sync_test";
 const base = `${user}:${password}@localhost:${port}`;
 export const DATABASE_URL = `postgres://${base}/${TEST_DB}`;
