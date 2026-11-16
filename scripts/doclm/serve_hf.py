@@ -15,8 +15,48 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+# Same command that fetched the weights; it resumes partial files. Run it in a separate terminal.
+RESUME_CMD = (
+    "cd ~ && HF_HUB_DISABLE_XET=1 HF_HUB_DOWNLOAD_TIMEOUT=120 ~/doclm-env/bin/python -c "
+    "'from huggingface_hub import snapshot_download as d; "
+    'print(d("microsoft/Phi-4-mini-instruct", local_dir="/home/psTech/doclm-models/Phi-4-mini-instruct", '
+    'allow_patterns=["*.safetensors","*.json","merges.txt","LICENSE","NOTICE.md","README.md"]))\''
+)
+NEEDED = ("config.json", "tokenizer.json", "tokenizer_config.json", "model.safetensors.index.json")
+
+
+def check_weights(path: str) -> list[str]:
+    """Return a list of problems (empty = weights look complete). Stdlib only, no GPU, no network."""
+    root = Path(path).expanduser()
+    if not root.is_dir():
+        return [f"directory not found: {root}"]
+    problems = [f"missing file: {n}" for n in NEEDED if not (root / n).exists()]
+    index = root / "model.safetensors.index.json"
+    if index.exists():
+        try:
+            meta = json.loads(index.read_text())
+            shards = sorted(set(meta["weight_map"].values()))
+            expected = int(meta["metadata"]["total_size"])
+        except (ValueError, KeyError, TypeError):
+            return problems + ["model.safetensors.index.json is unreadable"]
+        have = 0
+        for sh in shards:
+            f = root / sh
+            if not f.exists():
+                problems.append(f"missing weight shard: {sh}")
+            else:
+                have += f.stat().st_size
+        if have < expected * 0.995:  # shard files carry small headers, so allow >= expected
+            problems.append(f"weights incomplete: {have / 1e9:.2f} GB of about {expected / 1e9:.2f} GB")
+    partial = list((root / ".cache").rglob("*.incomplete")) if (root / ".cache").exists() else []
+    if partial:
+        problems.append(f"{len(partial)} partial download file(s) (*.incomplete) still present")
+    return problems
 
 
 def main() -> int:
@@ -25,7 +65,20 @@ def main() -> int:
     ap.add_argument("--adapter", help="optional PEFT/LoRA directory")
     ap.add_argument("--name", default="local")
     ap.add_argument("--port", type=int, default=8008)
+    ap.add_argument("--check-only", action="store_true", help="verify the weights and exit")
     args = ap.parse_args()
+
+    problems = check_weights(args.model_path)  # before importing torch: fast, no GPU needed
+    if problems:
+        print("docLM server NOT started: the base-model weights are missing or incomplete.", file=sys.stderr)
+        for p in problems:
+            print(f"  - {p}", file=sys.stderr)
+        print("\nResume the download in a separate terminal (it continues from the partial files):\n"
+              f"  {RESUME_CMD}\n", file=sys.stderr)
+        return 3
+    print(f"weights OK: {args.model_path}", flush=True)
+    if args.check_only:
+        return 0
 
     import torch  # imported late so --help works without the training env
     from transformers import AutoModelForCausalLM, AutoTokenizer
