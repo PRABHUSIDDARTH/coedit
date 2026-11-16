@@ -112,6 +112,14 @@ def parse_reply(task: str, text: str) -> Any:
 # ---------------------------------------------------------------- scoring
 
 
+# Item classes. `total` = form_mean x product(content) x forbidden-phrase factor, so structure
+# alone earns nothing: a reply with the right shape but no right content scores near 0.
+# HARD items are explicit constraints; failing any of them zeroes the example.
+HARD = frozenset({"parse", "complete", "changed", "within_limit", "shorter_than_source", "ids_exact", "in_range"})
+CONTENT = frozenset({"must_include", "sections", "score_closeness", "recall", "no_false_positive"})
+PENALTY = "must_not_include"  # multiplies the total; passing it earns nothing on its own
+
+
 @dataclass
 class Score:
     id: str
@@ -122,7 +130,19 @@ class Score:
 
     @property
     def total(self) -> float:
-        return sum(self.items.values()) / len(self.items) if self.items else 0.0
+        if not self.items or any(self.items.get(k, 1.0) == 0.0 for k in HARD):
+            return 0.0
+        form = [v for k, v in self.items.items() if k not in CONTENT and k != PENALTY]
+        total = sum(form) / len(form) if form else 1.0
+        for k in CONTENT:
+            if k in self.items:
+                total *= self.items[k]
+        return total * self.items.get(PENALTY, 1.0)
+
+
+def _complete(text: str) -> float:
+    """Prose replies must end like a finished sentence; a cut-off reply (token limit) fails."""
+    return float(text.rstrip().endswith((".", "!", "?", '"', "'", ")", "`")))
 
 
 def _words(s: str) -> int:
@@ -181,6 +201,7 @@ def score_example(ex: Example, reply: str) -> Score:
     elif ex.task == "rewrite":
         assert isinstance(out, TextOutput)
         orig = getattr(inp, "passage")
+        s.items["complete"] = _complete(out.text)
         s.items["changed"] = float(out.text.strip() != orig.strip())
         ratio = _words(out.text) / max(1, _words(orig))
         s.items["length_sane"] = float(0.3 <= ratio <= 2.0)
@@ -198,6 +219,7 @@ def score_example(ex: Example, reply: str) -> Score:
         s.items.update(_phrases(out.text, ex))
     elif ex.task == "summarize":
         assert isinstance(out, TextOutput) and isinstance(inp, SummarizeInput)
+        s.items["complete"] = _complete(out.text)
         s.items["within_limit"] = float(_words(out.text) <= inp.max_words)
         s.items["shorter_than_source"] = float(_words(out.text) < _words(inp.document))
         s.items.update(_phrases(out.text, ex))
@@ -208,9 +230,17 @@ def score_example(ex: Example, reply: str) -> Score:
             s.items["grounded"] = sum(ok) / len(ok)  # `original` must be copied verbatim
             s.items["has_reason"] = float(all(c.reason.strip() for c in out.changes))
         else:
-            s.items["grounded"] = 0.0 if ex.checks.get("must_include") else 1.0
+            s.items["grounded"] = 1.0
         # a "change" that changes nothing is noise
         s.items["non_noop"] = float(all(c.original != c.replacement for c in out.changes))
+        if ex.reference is not None:
+            ref = EditsOutput.from_dict(ex.reference).changes
+            if ref:  # did it find the real problems? (substring match either way)
+                hit = [any(c.original in r.original or r.original in c.original for c in out.changes)
+                       for r in ref]
+                s.items["recall"] = sum(hit) / len(ref)
+            else:  # the document is fine: any suggested change is a false positive
+                s.items["no_false_positive"] = float(not out.changes)
         s.items.update(_phrases(" ".join(c.replacement for c in out.changes), ex))
     return s
 
