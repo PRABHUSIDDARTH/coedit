@@ -1,7 +1,7 @@
 import { Database } from "@hocuspocus/extension-database";
 import { Server } from "@hocuspocus/server";
 import pg from "pg";
-import { verifyTicket } from "./auth.ts";
+import { verifyTicket, type Role, type TicketClaims } from "./auth.ts";
 
 export interface SyncOptions {
   port: number;
@@ -17,7 +17,16 @@ export interface SyncOptions {
   maxMessageBytes?: number;
   /** Connections (tabs) allowed on one document at a time; the next one is refused. 0 = no limit. */
   maxConnectionsPerDocument?: number;
+  /** Look the user up in Postgres (membership of the file's workspace, file not soft-deleted) on every
+   * connect and use that role instead of the one in the ticket. `optionsFromEnv` turns this on. */
+  checkMembership?: boolean;
+  /** With checkMembership: how often open connections are re-checked, in ms. A removed member or a
+   * demoted editor is disconnected (and reconnects read-only or not at all). 0 = never. */
+  revalidateMs?: number;
 }
+
+export const DEFAULT_REVALIDATE_MS = 30_000;
+const ROLE_RANK = { viewer: 0, editor: 1, owner: 2 } as const;
 
 export const DEFAULT_MAX_MESSAGE_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_MAX_CONNECTIONS_PER_DOCUMENT = 50;
@@ -38,7 +47,22 @@ export function createServer(options: SyncOptions): Server {
 
   const maxConnections = options.maxConnectionsPerDocument ?? DEFAULT_MAX_CONNECTIONS_PER_DOCUMENT;
 
-  return new Server(
+  const checkMembership = options.checkMembership ?? false;
+
+  /** The user's current role on the file's workspace, or null if not a member / file deleted. */
+  async function currentRole(userId: string, fileId: string): Promise<Role | null> {
+    const { rows } = await pool.query<{ role: Role }>(
+      `select m.role::text as role from files f
+         join memberships m on m.workspace_id = f.workspace_id and m.user_id = $2
+        where f.id = $1 and f.deleted_at is null`,
+      [fileId, userId],
+    );
+    return rows[0]?.role ?? null;
+  }
+
+  let timer: NodeJS.Timeout | undefined;
+
+  const server = new Server(
     {
       port: options.port,
       address: "0.0.0.0",
@@ -56,6 +80,12 @@ export function createServer(options: SyncOptions): Server {
       async onAuthenticate({ token, documentName, connectionConfig }) {
         // A throw rejects the connection. The message never includes the token.
         const claims = verifyTicket(token, documentName, options.ticketSecret);
+        if (checkMembership) {
+          // The ticket was valid when minted (<= 60 s ago); the database is authoritative now.
+          const role = await currentRole(claims.userId, documentName);
+          if (role === null) throw new Error("no longer a member of this file");
+          claims.role = role;
+        }
         if (claims.role === "viewer") connectionConfig.readOnly = true;
         return { user: claims };
       },
@@ -86,11 +116,38 @@ export function createServer(options: SyncOptions): Server {
       ],
 
       async onDestroy() {
+        clearInterval(timer);
         await pool.end();
       },
     },
     { maxPayload: options.maxMessageBytes ?? DEFAULT_MAX_MESSAGE_BYTES },
   );
+
+  /** Close connections whose user was removed or demoted since they connected. */
+  async function revalidate(): Promise<void> {
+    const open = [...server.hocuspocus.documents.values()].flatMap((doc) =>
+      [...doc.connections.values()].map(({ connection }) => ({ doc, connection })),
+    );
+    for (const { doc, connection } of open) {
+      const claims = (connection.context as { user?: TicketClaims } | undefined)?.user;
+      if (!claims) continue;
+      try {
+        const role = await currentRole(claims.userId, doc.name);
+        if (role === null || ROLE_RANK[role] < ROLE_RANK[claims.role]) {
+          connection.close({ code: 4403, reason: "Forbidden" });
+        }
+      } catch (err) {
+        console.error("sync: membership re-check failed", (err as { code?: string }).code ?? "");
+      }
+    }
+  }
+
+  const everyMs = options.revalidateMs ?? 0;
+  if (checkMembership && everyMs > 0) {
+    timer = setInterval(() => void revalidate(), everyMs);
+    timer.unref();
+  }
+  return server;
 }
 
 function nonNegativeInt(raw: string | undefined, name: string, fallback: number): number {
@@ -114,6 +171,9 @@ export function optionsFromEnv(env: NodeJS.ProcessEnv = process.env): SyncOption
     port: Number(env.PORT ?? 1234),
     ticketSecret,
     databaseUrl: env.DATABASE_URL,
+    // Production path: always look the user up; MEMBERSHIP_CHECK=0 is only for debugging.
+    checkMembership: env.MEMBERSHIP_CHECK !== "0",
+    revalidateMs: nonNegativeInt(env.REVALIDATE_SECONDS, "REVALIDATE_SECONDS", DEFAULT_REVALIDATE_MS / 1000) * 1000,
     maxMessageBytes: positiveInt(env.MAX_MESSAGE_BYTES, "MAX_MESSAGE_BYTES", DEFAULT_MAX_MESSAGE_BYTES),
     maxConnectionsPerDocument: nonNegativeInt(
       env.MAX_CONNECTIONS_PER_DOC,

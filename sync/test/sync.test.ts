@@ -7,6 +7,7 @@ import { WebSocket } from "ws";
 import * as Y from "yjs";
 import { createServer, optionsFromEnv, type SyncOptions } from "../src/server.ts";
 import {
+  addMember,
   closeClients,
   connect,
   connected,
@@ -255,4 +256,66 @@ test("limits come from MAX_MESSAGE_BYTES / MAX_CONNECTIONS_PER_DOC and reject ba
   assert.throws(() => optionsFromEnv({ ...base, MAX_MESSAGE_BYTES: "0" }));
   assert.throws(() => optionsFromEnv({ ...base, MAX_MESSAGE_BYTES: "lots" }));
   assert.throws(() => optionsFromEnv({ ...base, MAX_CONNECTIONS_PER_DOC: "-1" }));
+});
+
+test("with checkMembership the database role wins, and non-members are refused", async () => {
+  const checked = await startServer({ checkMembership: true });
+  try {
+    const fileId = await seedFile(pool);
+    const demotedInDb = await addMember(pool, fileId, "viewer"); // ticket below claims editor
+    const readOnly = connect(checked, fileId, ticket(fileId, "editor", { sub: demotedInDb }));
+    await waitFor(() => readOnly.status() !== "pending", "connection");
+    readOnly.doc.getText("t").insert(0, "sneaky");
+    const stranger = connect(checked, fileId, ticket(fileId, "editor")); // valid ticket, no membership
+    const editorId = await addMember(pool, fileId, "editor");
+    const editor = connect(checked, fileId, ticket(fileId, "editor", { sub: editorId }));
+    await waitFor(() => editor.status() === "synced", "editor to sync");
+    editor.doc.getText("t").insert(0, "real");
+    await waitFor(() => checked.hocuspocus.documents.get(fileId)?.getText("t").toString() === "real", "editor edit");
+    await sleep(300);
+    assert.equal(checked.hocuspocus.documents.get(fileId)?.getText("t").toString(), "real", "db-viewer edit not applied");
+    assert.equal(stranger.status(), "rejected");
+  } finally {
+    closeClients();
+    await checked.destroy();
+  }
+});
+
+test("a demoted editor loses edit access and a removed member is disconnected while connected", async () => {
+  const checked = await startServer({ checkMembership: true, revalidateMs: 100 });
+  try {
+    const fileId = await seedFile(pool);
+    const demoted = await addMember(pool, fileId, "editor");
+    const removed = await addMember(pool, fileId, "editor");
+    const a = connect(checked, fileId, ticket(fileId, "editor", { sub: demoted }));
+    const b = connect(checked, fileId, ticket(fileId, "editor", { sub: removed }));
+    await waitFor(() => a.status() === "synced" && b.status() === "synced", "both to sync");
+    const text = () => checked.hocuspocus.documents.get(fileId)?.getText("t").toString();
+    a.doc.getText("t").insert(0, "a1;");
+    await waitFor(() => text() === "a1;", "first edit");
+
+    await pool.query("update memberships set role = 'viewer' where user_id = $1", [demoted]);
+    await pool.query("delete from memberships where user_id = $1", [removed]);
+    // The open sockets are closed within a few re-check intervals; the clients reconnect with the same
+    // (still unexpired) ticket and are now read-only / refused, so these edits never land.
+    await sleep(1200);
+    a.doc.getText("t").insert(0, "demoted;");
+    b.doc.getText("t").insert(0, "removed;");
+    await sleep(500);
+    // The document may have unloaded if both sockets closed, so read it through a fresh member.
+    const reader = connect(checked, fileId, ticket(fileId, "editor", { sub: await addMember(pool, fileId, "viewer") }));
+    await waitFor(() => reader.status() === "synced", "reader to sync");
+    assert.equal(reader.doc.getText("t").toString(), "a1;", "edits after demotion/removal are not applied");
+  } finally {
+    closeClients();
+    await checked.destroy();
+  }
+});
+
+test("MEMBERSHIP_CHECK is on by default in optionsFromEnv", () => {
+  const base = { WS_TICKET_SECRET: "x".repeat(32), DATABASE_URL: "postgres://x" };
+  assert.equal(optionsFromEnv(base).checkMembership, true);
+  assert.equal(optionsFromEnv(base).revalidateMs, 30_000);
+  assert.equal(optionsFromEnv({ ...base, MEMBERSHIP_CHECK: "0" }).checkMembership, false);
+  assert.equal(optionsFromEnv({ ...base, REVALIDATE_SECONDS: "0" }).revalidateMs, 0);
 });
