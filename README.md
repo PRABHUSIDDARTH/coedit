@@ -258,8 +258,19 @@ against the running stack (it creates `smoke-*@example.com` users).
   ranges, i.e. the bundled web proxy). That proxy passes a client-supplied header through unchanged, so with
   `:5173` exposed directly a client can choose its own per-IP bucket; the per-email limit still applies. For a
   per-IP limit that holds, put a reverse proxy that overwrites the header in front of the web port.
-- **No total document size cap in sync.** Hocuspocus has no such option; only the size of one message
-  (`MAX_MESSAGE_BYTES`) and connections per document (`MAX_CONNECTIONS_PER_DOC`) are limited.
+- **Sync size limit is per message, not per document.** `MAX_MESSAGE_BYTES` (default 8 MiB) caps one WebSocket
+  message (one update or initial sync). Hocuspocus has no total-document-size option, so a document can still
+  grow beyond 8 MiB through many smaller updates. Connections per document are capped (`MAX_CONNECTIONS_PER_DOC`).
+- **Role changes can lag up to about 30 seconds.** A removed or demoted member keeps an already-open editing
+  socket until the sync server's next re-check (`REVALIDATE_SECONDS`, default 30); the API does not push a
+  disconnect. New connections are checked against Postgres immediately.
+- **The api container runs as root.** The sync and web containers run as the unprivileged `node` user; the api
+  image does not, because the existing `blobs` volume is root-owned (switching needs a one-time `chown` of that volume).
+- **Frontend dependency audit: 13 advisories, 7 high, none fixed.** `pnpm audit` reports 2 low, 4 moderate and
+  7 high. 11 of them, including all 7 high (`nanoid`, `lodash-es`; also `katex`), come in transitively through
+  `@excalidraw/excalidraw` (its mermaid conversion). The other 2 are in development tooling (`shadcn`, `eslint`).
+  Nothing was upgraded or force-resolved. `npm audit` for the sync server reports 0; the Python backend was
+  not audited.
 
 ## What is cut, and why
 
