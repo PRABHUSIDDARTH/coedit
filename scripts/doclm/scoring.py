@@ -115,9 +115,10 @@ def parse_reply(task: str, text: str) -> Any:
 # Item classes. `total` = form_mean x product(content) x forbidden-phrase factor, so structure
 # alone earns nothing: a reply with the right shape but no right content scores near 0.
 # HARD items are explicit constraints; failing any of them zeroes the example.
-HARD = frozenset({"parse", "complete", "changed", "within_limit", "shorter_than_source", "ids_exact", "in_range"})
+HARD = frozenset({"parse", "complete", "changed", "shorter_than_source", "ids_exact", "in_range"})
 CONTENT = frozenset({"must_include", "sections", "score_closeness", "recall", "no_false_positive"})
-PENALTY = "must_not_include"  # multiplies the total; passing it earns nothing on its own
+PENALTIES = ("must_not_include", "within_limit")  # multiply the total; passing earns nothing on its own
+LIMIT_GRACE = 0.25  # summaries may exceed max_words by up to 25%, with a linear penalty
 
 
 @dataclass
@@ -132,17 +133,25 @@ class Score:
     def total(self) -> float:
         if not self.items or any(self.items.get(k, 1.0) == 0.0 for k in HARD):
             return 0.0
-        form = [v for k, v in self.items.items() if k not in CONTENT and k != PENALTY]
+        form = [v for k, v in self.items.items() if k not in CONTENT and k not in PENALTIES]
         total = sum(form) / len(form) if form else 1.0
         for k in CONTENT:
             if k in self.items:
                 total *= self.items[k]
-        return total * self.items.get(PENALTY, 1.0)
+        for k in PENALTIES:
+            total *= self.items.get(k, 1.0)
+        return total
 
 
 def _complete(text: str) -> float:
     """Prose replies must end like a finished sentence; a cut-off reply (token limit) fails."""
     return float(text.rstrip().endswith((".", "!", "?", '"', "'", ")", "`")))
+
+
+def limit_factor(words: int, limit: int) -> float:
+    """1.0 within the limit; falls linearly to 0.0 at limit * (1 + LIMIT_GRACE); 0.0 beyond.
+    factor = 1 - (words/limit - 1) / LIMIT_GRACE, clamped to [0, 1]."""
+    return max(0.0, min(1.0, 1.0 - (words / limit - 1.0) / LIMIT_GRACE))
 
 
 def _words(s: str) -> int:
@@ -158,15 +167,64 @@ def _section_cov(md: str, required: tuple[str, ...]) -> float:
     return sum(any(req in h for h in heads) for req in required) / len(required)
 
 
+_MONTHS = (
+    "january february march april may june july august september october november december"
+).split()
+_MONTH_RE = "|".join(_MONTHS)
+_NUMWORDS = {
+    w: str(i)
+    for i, w in enumerate(
+        "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+        "fifteen sixteen seventeen eighteen nineteen twenty".split()
+    )
+}
+_NUMWORDS.update({"thirty": "30", "forty": "40", "fifty": "50", "sixty": "60", "hundred": "100"})
+
+
+def _stem(w: str) -> str:
+    """Tiny deterministic stemmer: plural/-ies variants only (retries -> retry, days -> day)."""
+    if w.isdigit() or len(w) <= 3:
+        return w
+    if w.endswith("ies") and len(w) > 4:
+        return w[:-3] + "y"
+    if w.endswith("sses"):
+        return w[:-2]
+    if w.endswith("s") and not w.endswith(("ss", "us", "is")):
+        return w[:-1]
+    return w
+
+
+def norm_tokens(text: str) -> list[str]:
+    """Normalise for phrase matching: case, punctuation, hyphens, apostrophes, ordinals,
+    "3 January" == "January 3rd" == "the 3rd of January", number words (thirty == 30),
+    "%" == percent, and plural stems. Deterministic; no model involved."""
+    t = text.lower().replace("%", " percent ").replace("\u2019", "'")
+    t = t.replace("'", "")
+    t = re.sub(r"[^\w\s]", " ", t.replace("_", " "))
+    t = re.sub(r"\b(\d+)(?:st|nd|rd|th)\b", r"\1", t)
+    t = re.sub(rf"\b(\d{{1,2}}) of ({_MONTH_RE})\b", r"\1 \2", t)
+    t = re.sub(rf"\b(\d{{1,2}}) ({_MONTH_RE})\b", r"\2 \1", t)  # canonical: month day
+    return [_stem(_NUMWORDS.get(w, w)) for w in t.split()]
+
+
+def contains_phrase(text: str, phrase: str) -> bool:
+    a, b = norm_tokens(text), norm_tokens(phrase)
+    return bool(b) and any(a[i : i + len(b)] == b for i in range(len(a) - len(b) + 1))
+
+
+def _alts(entry: str | list[str]) -> list[str]:
+    return [entry] if isinstance(entry, str) else list(entry)
+
+
 def _phrases(text: str, ex: Example) -> dict[str, float]:
+    """must_include entries are a phrase OR a list of acceptable alternatives (any one counts)."""
     out: dict[str, float] = {}
     inc = ex.checks.get("must_include", [])
     exc = ex.checks.get("must_not_include", [])
-    low = text.lower()
     if inc:
-        out["must_include"] = sum(p.lower() in low for p in inc) / len(inc)
+        out["must_include"] = sum(any(contains_phrase(text, a) for a in _alts(e)) for e in inc) / len(inc)
     if exc:
-        out["must_not_include"] = 1.0 - sum(p.lower() in low for p in exc) / len(exc)
+        out["must_not_include"] = 1.0 - sum(contains_phrase(text, p) for p in exc) / len(exc)
     return out
 
 
@@ -220,7 +278,7 @@ def score_example(ex: Example, reply: str) -> Score:
     elif ex.task == "summarize":
         assert isinstance(out, TextOutput) and isinstance(inp, SummarizeInput)
         s.items["complete"] = _complete(out.text)
-        s.items["within_limit"] = float(_words(out.text) <= inp.max_words)
+        s.items["within_limit"] = limit_factor(_words(out.text), inp.max_words)
         s.items["shorter_than_source"] = float(_words(out.text) < _words(inp.document))
         s.items.update(_phrases(out.text, ex))
     elif ex.task == "suggest_edits":

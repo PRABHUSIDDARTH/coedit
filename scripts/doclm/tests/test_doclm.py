@@ -275,3 +275,49 @@ class RunnerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PhraseMatchingTests(unittest.TestCase):
+    def test_normalisation_cases(self) -> None:
+        from scoring import contains_phrase as c
+
+        yes = [
+            ("The office is closed on Friday, January 3rd.", "Friday 3 January"),
+            ("by November 30", "30 November"),
+            ("the 3rd of January", "3 January"),
+            ("the worker will retry", "retries"),
+            ("a 10-minute setup", "10 minutes"),
+            ("within thirty days", "30 days"),
+            ("up 12%", "12 percent"),
+            ("They're going", "they re going".replace(" re", "re")),
+            ("Half-price tickets", "half price"),
+        ]
+        for text, phrase in yes:
+            self.assertTrue(c(text, phrase), (text, phrase))
+        no = [("Friday 4 January", "Friday 3 January"), ("a month", "30 days"), ("retrying", "retry")]
+        for text, phrase in no:  # normalisation must not make everything match
+            self.assertFalse(c(text, phrase), (text, phrase))
+
+    def test_must_include_alternatives_and_validation(self) -> None:
+        d = make_seed_data.build()[2].to_dict()  # seed-rewrite-01
+        d["checks"] = {"must_include": [["refund", "reimburse"], "five business days"]}
+        ex = Example.from_dict(d)
+        self.assertEqual(score_example(ex, "We reimburse customers within five business days.").total, 1.0)
+        d["checks"] = {"must_include": [[]]}
+        with self.assertRaises(SchemaError):
+            Example.from_dict(d)
+
+    def test_limit_factor_formula(self) -> None:
+        from scoring import limit_factor as lf
+
+        self.assertEqual([lf(w, 40) for w in (10, 40)], [1.0, 1.0])
+        self.assertAlmostEqual(lf(45, 40), 0.5)  # +12.5% -> halfway
+        self.assertEqual(lf(50, 40), 0.0)  # +25% -> 0
+        self.assertEqual(lf(80, 40), 0.0)
+        ex = next(e for e in make_seed_data.build() if e.id == "seed-summarize-01")  # limit 25
+        reply = ("The library is closed until about Friday for roof repairs, and borrowers need not return books "
+                 "while late fees are paused for the whole week, according to staff.")
+        n = len(reply.split())
+        self.assertTrue(25 < n < 31, n)
+        s = score_example(ex, reply)
+        self.assertTrue(0.0 < s.total < 1.0, s.items)  # graded, not zeroed

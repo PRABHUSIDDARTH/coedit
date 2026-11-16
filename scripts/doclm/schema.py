@@ -252,7 +252,7 @@ class Example:
     source: str  # provenance, e.g. "seed-handwritten"; required so data lineage is auditable
     input: dict[str, Any]
     reference: dict[str, Any] | None = None
-    checks: dict[str, list[str]] = field(default_factory=dict)
+    checks: dict[str, list[Any]] = field(default_factory=dict)
 
     def validate(self) -> None:
         w = f"example {self.id!r}"
@@ -270,10 +270,16 @@ class Example:
         if self.split == "heldout" and self.reference is None:
             raise SchemaError(f"{w}.reference: held-out examples need a reference")
         for key, vals in self.checks.items():
-            if key not in {"must_include", "must_not_include"}:
+            if key not in {"must_include", "must_not_include", "must_say_unknown"}:
                 raise SchemaError(f"{w}.checks: unknown key {key!r}")
-            if not isinstance(vals, list) or not all(isinstance(v, str) and v for v in vals):
-                raise SchemaError(f"{w}.checks.{key}: expected a list of non-empty strings")
+            if not isinstance(vals, list):
+                raise SchemaError(f"{w}.checks.{key}: expected a list")
+            for v in vals:  # must_include entries may be a list of acceptable alternatives
+                ok = isinstance(v, str) and v
+                if key == "must_include" and isinstance(v, list):
+                    ok = bool(v) and all(isinstance(a, str) and a for a in v)
+                if not ok:
+                    raise SchemaError(f"{w}.checks.{key}: entries must be non-empty strings")
 
     @classmethod
     def from_dict(cls, d: Any) -> Example:
