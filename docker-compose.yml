@@ -28,6 +28,12 @@ services:
     # Linux has no host.docker.internal by default; this makes the Ollama preset work there too.
     extra_hosts: ["host.docker.internal:host-gateway"]
     ports: ["127.0.0.1:8000:8000"]  # loopback only; the web container reaches it as api:8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       db: { condition: service_healthy }
 
@@ -38,6 +44,12 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-coedit}:${POSTGRES_PASSWORD:?run make env}@db:5432/${POSTGRES_DB:-coedit}
       PORT: "1234"
     ports: ["127.0.0.1:1234:1234"]  # loopback only (see README "Network exposure")
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:1234/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     depends_on:
       db: { condition: service_healthy }
 
@@ -51,6 +63,12 @@ services:
       # of the same host (the API tells it "/sync"; the app maps that to :1234).
       API_TARGET: http://api:8000
     ports: ["5173:3000"]  # kept on 5173, the address everything else already uses
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     depends_on: [api, sync]
 
 volumes:
