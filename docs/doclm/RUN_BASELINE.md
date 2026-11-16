@@ -1,6 +1,6 @@
 # Run the docLM baseline yourself (no Claude needed)
 
-Copy-paste runbook: freeze the held-out set, commit it, serve the base model, score it, write `BASELINE.md`, stop the server.
+Copy-paste runbook: freeze the held-out set, commit it, serve the base model, score it, write `docs/doclm/results/BASELINE.md`, stop the server.
 **This file was written from the scripts' source without running any of the commands.** Numbers marked "~" come from the
 earlier smoke tests recorded in `PROGRESS.md`; yours may differ slightly. Everything runs from the repo root, on the branch you are on
 (`git branch --show-current`).
@@ -15,7 +15,7 @@ run the baseline once.
 ```bash
 cd /home/psTech/psTech/coedit
 git branch --show-current
-git status --short                      # expect exactly the two uncommitted docLM files:
+git status --short                      # expect the two uncommitted docLM files (plus any docs you added yourself):
                                         #  M docs/doclm/SCORING.md
                                         #  M scripts/doclm/data/heldout.draft.jsonl
 python3 -m unittest discover -s scripts/doclm/tests 2>&1 | tail -4     # expect "Ran 76 tests ... OK" (count may grow)
@@ -26,23 +26,13 @@ nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv       # expect
 ```
 If any of these fail, jump to **Troubleshooting** before continuing.
 
-## 1. Commit the two uncommitted docLM files FIRST
+## 1. Freeze (one-shot, cannot be undone)
 
-They are the final scorer/held-out edits. Freezing copies the draft, so the draft you freeze must be the committed one.
-Skim what you are committing, then commit:
-
-```bash
-git diff --stat
-git add docs/doclm/SCORING.md scripts/doclm/data/heldout.draft.jsonl
-git commit -m "doclm: final held-out draft and SCORING.md before freeze"
-git status --short                      # expect empty
-```
-
-## 2. Freeze (one-shot, cannot be undone)
-
-Only after you have reviewed the tasks (`docs/doclm/HELDOUT_REVIEW.md`).
+Only after you have reviewed the tasks (`docs/doclm/HELDOUT_REVIEW.md`). The draft currently has uncommitted edits (the final scorer/held-out tweaks);
+freezing copies the **working-tree** draft, so do not edit `heldout.draft.jsonl` between this step and the commit in step 2.
 
 ```bash
+cd /home/psTech/psTech/coedit
 python3 scripts/doclm/freeze_heldout.py
 ```
 Expected, one line, exit 0:
@@ -63,15 +53,24 @@ wc -l < scripts/doclm/data/heldout.v1.jsonl             # expect 50
 Success = the first four hashes match (v1, draft, sidecar, HELDOUT_HASH.txt), mode 444, 50 lines.
 Failure modes:
 - `error: refusing to overwrite existing heldout.v1.jsonl: a frozen set is never replaced` (exit 1): it was already frozen. Do not delete it to retry; verify the hash instead.
-- `error: held-out set must have exactly 50 tasks, has N` / `needs at least 8 <task> tasks` / `only split=heldout records`: fix the draft, commit that (step 1), then freeze.
-- `error: ... SchemaError text` for a bad record: fix the draft record named by the message, commit, retry. Nothing was written if it fails.
+- `error: held-out set must have exactly 50 tasks, has N` / `needs at least 8 <task> tasks` / `only split=heldout records`: fix the draft, then rerun freeze (nothing was written when it fails).
+- `error: ...` for a bad record: fix the record named by the message, rerun freeze. Nothing was written if it fails.
 
-### Commit the frozen files
-`scripts/doclm/data/` is un-ignored by `scripts/doclm/.gitignore`, but `-f` is harmless and the repo root ignores `data/`:
+## 2. Commit the frozen files plus the two uncommitted docLM files
+
+One commit with the frozen set and the exact draft and scoring rules it was frozen against. Look at what you are committing first:
+
 ```bash
+cd /home/psTech/psTech/coedit
+git status --short        # expect: M docs/doclm/SCORING.md, M scripts/doclm/data/heldout.draft.jsonl, ?? the three new frozen files
+git diff --stat
+```
+`-f` is used for the frozen data because the repo root `.gitignore` ignores `data/` (`scripts/doclm/.gitignore` re-includes it, but `-f` is harmless):
+```bash
+git add docs/doclm/SCORING.md scripts/doclm/data/heldout.draft.jsonl
 git add -f scripts/doclm/data/heldout.v1.jsonl scripts/doclm/data/heldout.v1.jsonl.sha256 docs/doclm/HELDOUT_HASH.txt
-git commit -m "doclm: freeze held-out v1"
-git status --short                      # expect empty
+git commit -m "doclm: freeze held-out v1 (final draft and SCORING.md)"
+git status --short        # expect no docLM entries left
 ```
 
 ## 3. Start the model server (terminal 1, or background as below)
@@ -110,11 +109,12 @@ cd /home/psTech/psTech/coedit
 python3 scripts/doclm/eval_runner.py \
   --data scripts/doclm/data/heldout.v1.jsonl \
   --base-url http://127.0.0.1:8008/v1 --model phi4-mini-base \
-  --label base --max-tokens 1024 --timeout 300 2>&1 | tee /tmp/doclm-baseline.out
+  --label base --max-tokens 1024 --timeout 300 \
+  --out-dir docs/doclm/results 2>&1 | tee /tmp/doclm-baseline.out
 echo "eval exit code: ${PIPESTATUS[0]}"
 ```
 It sends the 50 tasks one at a time and prints nothing until the end: expect roughly 10 to 25 minutes at ~68 tokens/s greedy. Watch progress with
-`watch -n 5 nvidia-smi` (GPU utilisation should stay high). Do not interrupt it. `--timeout 300` only raises the per-request wait; it does not change outputs.
+`watch -n 5 nvidia-smi` (GPU utilisation should stay high). Do not interrupt it. `--timeout 300` only raises the per-request wait; it does not change outputs. `--out-dir docs/doclm/results` puts `base.md` and `base.json` next to `BASELINE.md` (a tracked folder, so no `git add -f` is needed).
 
 Expected end of output:
 ```
@@ -125,7 +125,7 @@ Endpoint model id: `phi4-mini-base`. Data: `heldout.v1.jsonl`.
 | task | n | mean score (0-1) | JSON-valid rate (strict) | JSON-valid if unfenced | fenced |
 |---|---|---|---|---|---|
 | <six task rows, n adding up to 50> |
-wrote .../scripts/doclm/results/base.md and .../scripts/doclm/results/base.json
+wrote .../docs/doclm/results/base.md and .../docs/doclm/results/base.json
 eval exit code: 0
 ```
 
@@ -137,7 +137,7 @@ Success needs ALL of:
 ```bash
 python3 - <<'EOF'
 import json
-r = json.load(open("scripts/doclm/results/base.json"))
+r = json.load(open("docs/doclm/results/base.json"))
 frozen = open("scripts/doclm/data/heldout.v1.jsonl.sha256").read().strip()
 print("errors:", r["errors"], "| dry_run:", r["dry_run"], "| items:", len(r["items"]))
 print("hash matches frozen:", r["data_sha256"] == frozen)
@@ -147,16 +147,17 @@ EOF
 ```
 Failure:
 - exit `1` + `Request errors ...`: some requests failed (timeouts, connection reset, server crashed). The numbers are NOT a valid baseline. Check the server is still alive
-  (`kill -0 $(cat /tmp/doclm-serve.pid)`; `tail /tmp/doclm-serve.log`), fix the cause (see Troubleshooting), delete `scripts/doclm/results/base.*`, rerun step 4.
+  (`kill -0 $(cat /tmp/doclm-serve.pid)`; `tail /tmp/doclm-serve.log`), fix the cause (see Troubleshooting), delete `docs/doclm/results/base.*`, rerun step 4.
 - exit `2` with `error: held-out file is not frozen: run --freeze first` or `held-out file changed since it was frozen`: the data file or its `.sha256` is wrong.
   Never edit v1. Restore it: `git checkout -- scripts/doclm/data/heldout.v1.jsonl scripts/doclm/data/heldout.v1.jsonl.sha256`, redo the hash check.
 - exit `2` with `--base-url and --model are required` / `--label is required`: a typo in the command.
 
-## 5. Write BASELINE.md
+## 5. Write docs/doclm/results/BASELINE.md
 
 No script writes it; this assembles it from the run (still in the repo root, server still running so its load line is in the log):
 ```bash
 cd /home/psTech/psTech/coedit
+mkdir -p docs/doclm/results
 {
   echo "# docLM baseline: Phi-4-mini-instruct (no fine-tuning)"
   echo
@@ -166,15 +167,14 @@ cd /home/psTech/psTech/coedit
   echo "- model: microsoft/Phi-4-mini-instruct, weights index sha256 $(sha256sum ~/doclm-models/Phi-4-mini-instruct/model.safetensors.index.json | cut -c1-16)..."
   echo "- settings: bf16, greedy (do_sample=False), max_new_tokens 1024, tokenizer chat template, scoring.build_messages prompts, served by scripts/doclm/serve_hf.py"
   echo "- server load line: \`$(grep '^{"load_seconds' /tmp/doclm-serve.log)\`"
-  echo "- scorer rules: docs/doclm/SCORING.md (unchanged since the freeze)"
+  echo "- scorer rules: docs/doclm/SCORING.md (committed with the freeze, unchanged since)"
   echo
-  cat scripts/doclm/results/base.md
+  cat docs/doclm/results/base.md
   echo
   echo "Caveat: the scorer checks structure and required content, not writing quality; read some outputs yourself. Single run, greedy."
-} > docs/doclm/BASELINE.md
-head -20 docs/doclm/BASELINE.md        # check it looks right
-git add docs/doclm/BASELINE.md
-git add -f scripts/doclm/results/base.json scripts/doclm/results/base.md    # results/ is gitignored; keep the raw record
+} > docs/doclm/results/BASELINE.md
+head -20 docs/doclm/results/BASELINE.md        # check it looks right
+git add docs/doclm/results/BASELINE.md docs/doclm/results/base.md docs/doclm/results/base.json
 git commit -m "doclm: baseline for Phi-4-mini-instruct on held-out v1"
 ```
 
