@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     # Where the browser reaches the sync server; a path is resolved against the page origin
     # (the web container proxies /sync to the sidecar).
     sync_public_url: str = "/sync"
+    # Login/register rate limits (in-memory, per process; 0 disables a limit). See app/ratelimit.py.
+    rate_limit_window_seconds: int = Field(default=900, ge=1)
+    rate_limit_ip_max: int = Field(default=30, ge=0)
+    rate_limit_email_max: int = Field(default=8, ge=0)
+    # Use the last X-Forwarded-For entry as the client IP. Only behind a proxy that sets it.
+    rate_limit_trust_forwarded: bool = False
     blob_dir: str = "./data/blobs"
     max_upload_bytes: int = 50 * 1024 * 1024
     # Where new blob versions are written. "local" (default) is the volume above; "nexuscloud"

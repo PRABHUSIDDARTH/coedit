@@ -15,7 +15,13 @@ os.environ.setdefault("APP_SECRET", "test-app-secret-0123456789abcdefghij")
 os.environ.setdefault("WS_TICKET_SECRET", "test-ws-secret-0123456789abcdefghijk")
 os.environ.setdefault("KEY_ENCRYPTION_KEY", base64.b64encode(b"k" * 32).decode())
 
+# Every test shares one client address, so the suite runs with the limits effectively off;
+# tests/test_ratelimit.py lowers them explicitly.
+os.environ.setdefault("RATE_LIMIT_IP_MAX", "100000")
+os.environ.setdefault("RATE_LIMIT_EMAIL_MAX", "100000")
+
 os.environ["BLOB_DIR"] = tempfile.mkdtemp(prefix="coedit-test-blobs-")
+
 
 # Tests run against a separate database (<name>_test) so they never touch dev/demo data.
 def _default_database_url() -> str:
@@ -67,6 +73,13 @@ def new_client() -> AsyncClient:
     from app.main import app
 
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=CSRF)
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter() -> None:
+    from app.ratelimit import limiter
+
+    limiter.clear()
 
 
 @pytest.fixture
