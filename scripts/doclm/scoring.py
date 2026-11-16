@@ -118,7 +118,8 @@ def parse_reply(task: str, text: str) -> Any:
 # HARD items are explicit constraints; failing any of them zeroes the example.
 HARD = frozenset({"parse", "complete", "changed", "shorter_than_source", "ids_exact", "in_range"})
 CONTENT = frozenset(
-    {"must_include", "sections", "score_closeness", "recall", "precision", "no_false_positive"}
+    {"must_include", "sections", "score_closeness", "recall", "precision", "no_false_positive",
+     "unknown_fields"}
 )
 PENALTIES = ("must_not_include", "within_limit")  # multiply the total; passing earns nothing on its own
 LIMIT_GRACE = 0.25  # summaries may exceed max_words by up to 25%, with a linear penalty
@@ -318,6 +319,38 @@ def _alts(entry: str | list[str]) -> list[str]:
     return [entry] if isinstance(entry, str) else list(entry)
 
 
+UNKNOWN_MARKERS = ("unknown", "not specified", "not provided", "not stated", "n/a", "tbd")
+
+
+def _section_body(md: str, field: str) -> str | None:
+    """Text under the first heading that contains `field`, up to the next heading."""
+    lines = md.splitlines()
+    want = norm_tokens(field)
+    for i, line in enumerate(lines):
+        m = re.match(r"^#{1,6}\s+(.+?)\s*$", line)
+        if m and contains_phrase(m.group(1), field) and want:
+            body = []
+            for nxt in lines[i + 1 :]:
+                if re.match(r"^#{1,6}\s", nxt):
+                    break
+                body.append(nxt)
+            return "\n".join(body)
+    return None
+
+
+def _unknown_fields(md: str, ex: Example) -> dict[str, float]:
+    """Only for tasks that declare `checks.must_say_unknown`: each named section must say it is
+    unknown instead of inventing content. No generic penalty for tasks that do not declare it."""
+    fields = ex.checks.get("must_say_unknown", [])
+    if not fields:
+        return {}
+    ok = 0
+    for f in fields:
+        body = _section_body(md, f)
+        ok += body is not None and any(contains_phrase(body, m) for m in UNKNOWN_MARKERS)
+    return {"unknown_fields": ok / len(fields)}
+
+
 def _phrases(text: str, ex: Example) -> dict[str, float]:
     """must_include entries are a phrase OR a list of acceptable alternatives (any one counts)."""
     out: dict[str, float] = {}
@@ -372,11 +405,13 @@ def score_example(ex: Example, reply: str) -> Score:
         s.items["sections"] = _section_cov(out.text, AGENTS_SECTIONS)
         s.items["no_preamble"] = float(not PREAMBLE.match(out.text))
         s.items.update(_phrases(out.text, ex))
+        s.items.update(_unknown_fields(out.text, ex))
     elif ex.task == "architecture_md":
         assert isinstance(out, TextOutput)
         s.items["sections"] = _section_cov(out.text, ARCH_SECTIONS)
         s.items["no_preamble"] = float(not PREAMBLE.match(out.text))
         s.items.update(_phrases(out.text, ex))
+        s.items.update(_unknown_fields(out.text, ex))
     elif ex.task == "summarize":
         assert isinstance(out, TextOutput) and isinstance(inp, SummarizeInput)
         s.items["complete"] = _complete(out.text)

@@ -93,7 +93,7 @@ def build() -> list[Example]:
         "# AGENTS.md\n\n## Stack\nEleventy, Node 22.\n\n## Commands\n- Build: `npm run build`\n"
         "- Test: unknown (no tests yet)\n\n## Conventions\n- Never edit files under `dist/`.\n\n"
         "## Definition of done\nunknown\n",
-        {"must_include": ["npm run build", "dist/"]},
+        {"must_include": ["npm run build", "dist/"], "must_say_unknown": ["Definition of done"]},
     ))
     ex.append(_text(
         "architecture_md", 1,
