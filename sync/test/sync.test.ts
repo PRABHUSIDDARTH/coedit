@@ -3,8 +3,9 @@ import { randomUUID } from "node:crypto";
 import { after, afterEach, before, test } from "node:test";
 import type { Server } from "@hocuspocus/server";
 import type pg from "pg";
+import { WebSocket } from "ws";
 import * as Y from "yjs";
-import { createServer } from "../src/server.ts";
+import { createServer, optionsFromEnv, type SyncOptions } from "../src/server.ts";
 import {
   closeClients,
   connect,
@@ -18,18 +19,20 @@ import {
   snapshot,
   ticket,
   waitFor,
+  wsUrl,
 } from "./helpers.ts";
 
 let pool: pg.Pool;
 let server: Server;
 
-async function startServer(): Promise<Server> {
+async function startServer(limits: Partial<SyncOptions> = {}): Promise<Server> {
   const s = createServer({
     port: 0,
     ticketSecret: SECRET,
     databaseUrl: DATABASE_URL,
     debounce: 40,
     stopOnSignals: false,
+    ...limits,
   });
   await s.listen();
   return s;
@@ -193,4 +196,63 @@ test("state for a file that no longer exists is dropped, not crashed on", async 
   const ok = await connected(server, fileId, "editor");
   ok.doc.getText("t").insert(0, "fine");
   await waitFor(async () => (await storedText(fileId)) === "fine", "store after FK failure");
+});
+
+test("a document accepts at most maxConnectionsPerDocument connections, and frees a slot on close", async () => {
+  const limited = await startServer({ maxConnectionsPerDocument: 2 });
+  try {
+    const fileId = await seedFile(pool);
+    const a = await connected(limited, fileId, "editor");
+    await connected(limited, fileId, "viewer");
+    const third = connect(limited, fileId, ticket(fileId, "editor"));
+    await sleep(500);
+    assert.notEqual(third.status(), "synced", "third connection must not sync");
+    assert.equal(limited.hocuspocus.documents.get(fileId)?.getConnectionsCount(), 2);
+    // Another document is unaffected by this document's limit.
+    const other = await seedFile(pool);
+    await connected(limited, other, "editor");
+    // Closing one frees a slot.
+    a.provider.destroy();
+    await waitFor(() => limited.hocuspocus.documents.get(fileId)?.getConnectionsCount() === 1, "slot to free");
+    await connected(limited, fileId, "editor");
+  } finally {
+    closeClients();
+    await limited.destroy();
+  }
+});
+
+test("a frame larger than maxMessageBytes closes the connection with 1009; normal edits still work", async () => {
+  const limited = await startServer({ maxMessageBytes: 64 * 1024 });
+  try {
+    const fileId = await seedFile(pool);
+    const small = await connected(limited, fileId, "editor");
+    // A raw socket, not a provider: the provider would reconnect and resend the oversized state.
+    const raw = new WebSocket(wsUrl(limited));
+    const closeCode = await new Promise<number>((resolve, reject) => {
+      raw.on("error", () => {}); // the close event carries the outcome
+      raw.on("open", () => raw.send(Buffer.alloc(200 * 1024, 1)));
+      raw.on("close", (code) => resolve(code));
+      setTimeout(() => reject(new Error("socket was not closed")), 5000);
+    });
+    assert.equal(closeCode, 1009, "ws closes with 1009 (message too big)");
+    // A frame under the limit is accepted (it is not valid protocol data, but it is not size-rejected).
+    small.doc.getText("t").insert(0, "ok");
+    await waitFor(() => limited.hocuspocus.documents.get(fileId)?.getText("t").toString() === "ok", "small edit");
+  } finally {
+    closeClients();
+    await limited.destroy();
+  }
+});
+
+test("limits come from MAX_MESSAGE_BYTES / MAX_CONNECTIONS_PER_DOC and reject bad values", () => {
+  const base = { WS_TICKET_SECRET: "x".repeat(32), DATABASE_URL: "postgres://x" };
+  const dflt = optionsFromEnv(base);
+  assert.equal(dflt.maxMessageBytes, 8 * 1024 * 1024);
+  assert.equal(dflt.maxConnectionsPerDocument, 50);
+  const set = optionsFromEnv({ ...base, MAX_MESSAGE_BYTES: "1048576", MAX_CONNECTIONS_PER_DOC: "0" });
+  assert.equal(set.maxMessageBytes, 1048576);
+  assert.equal(set.maxConnectionsPerDocument, 0);
+  assert.throws(() => optionsFromEnv({ ...base, MAX_MESSAGE_BYTES: "0" }));
+  assert.throws(() => optionsFromEnv({ ...base, MAX_MESSAGE_BYTES: "lots" }));
+  assert.throws(() => optionsFromEnv({ ...base, MAX_CONNECTIONS_PER_DOC: "-1" }));
 });
