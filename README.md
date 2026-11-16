@@ -57,6 +57,11 @@ Useful switches in `.env`:
 | `COUNCIL_PRICES` | JSON `{"model-id": [input_usd_per_mtok, output_usd_per_mtok]}` to add or override prices. |
 | `STORAGE_BACKEND` | `local` (default: the `/data/blobs` volume) or `nexuscloud`. See "Optional: NexusCloud storage". |
 | `DB_PORT` | Host port for Postgres (default 5433, because 5432 is often taken). |
+| `SESSION_TTL_HOURS` | Session cookie/JWT lifetime, default 24. Logout does not revoke a copied token. |
+| `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_IP_MAX`, `RATE_LIMIT_EMAIL_MAX`, `RATE_LIMIT_TRUST_FORWARDED` | Login/register limits (in memory, per process; 0 disables a limit; defaults 900 s, 30, 8). 429 with `Retry-After`. |
+| `MAX_MESSAGE_BYTES`, `MAX_CONNECTIONS_PER_DOC` | Sync server: largest WebSocket message (default 8 MiB) and connections per document (default 50). |
+| `REVALIDATE_SECONDS`, `MEMBERSHIP_CHECK` | Sync server re-checks roles in Postgres on connect and every N seconds (default 30); removed/demoted members are disconnected. |
+| `ENABLE_HSTS` | Build-time: `1` adds `Strict-Transport-Security` (only when served over HTTPS). |
 | `API_TARGET` | Where the Next server proxies `/api` (read at runtime; Compose sets `http://api:8000`; default for local dev `http://localhost:8000`). |
 | `NEXT_PUBLIC_SYNC_URL` | Overrides the sync WebSocket address. Baked in at build time; empty means unset. By default the browser connects to port 1234 on the page's own host. |
 
@@ -214,6 +219,27 @@ Backend tests use their own database (`coedit_test`), sync tests another (`coedi
 neither touches your data. `cd sync && npx tsx scripts/smoke.ts` runs an end-to-end check
 against the running stack (it creates `smoke-*@example.com` users).
 
+## Known limitations
+
+- **Email enumeration on add-member.** Adding a member by email answers "No account with that email" for
+  unknown addresses (404) and "Already a member" (409). Only workspace owners can call it. This is a
+  deliberate trade-off for invite-by-email. Register also answers 409 for a registered email. Login does not
+  distinguish a wrong password from an unknown email; login and register are rate limited.
+- **Soft deletes, no blob garbage collection.** Deleting a file sets `deleted_at`; its blob versions stay on
+  the volume.
+- **Council runs are in-process.** A run is an `asyncio` task inside the API process: no queue, no per-user
+  concurrency limit (the per-run spend cap is the only limit). A restart fails runs that were active.
+- **NexusCloud storage is stub-tested only.** No real NexusCloud service was used.
+- **Canvas and the Admin console are mock-data previews** and labelled so in the UI.
+- **GPL-3.0-or-later** for the whole repository, because HyperFormula (GPL) is linked into the web app.
+- **The council is a hypothesis.** Nothing here shows that several models plus critique beat a single model;
+  that was not measured.
+- **Rate limits are in memory** (per API process; reset on restart, not shared between replicas). Behind the
+  bundled web proxy alone, the API sees one client address for everyone, so the per-IP login limit is then
+  shared by all users; see `RATE_LIMIT_TRUST_FORWARDED` in `.env.example`.
+- **No total document size cap in sync.** Hocuspocus has no such option; only the size of one message
+  (`MAX_MESSAGE_BYTES`) and connections per document (`MAX_CONNECTIONS_PER_DOC`) are limited.
+
 ## What is cut, and why
 
 | Cut or limited | Why |
@@ -224,8 +250,8 @@ against the running stack (it creates `smoke-*@example.com` users).
 | The Council shows each provider's steps, tokens and spend, but not the models' text as it streams. | The API reports run steps and writes the result to files; the text of each draft is not exposed. |
 | Council research from URLs (server-side fetch with SSRF guard) | Not built. |
 | Playwright end-to-end tests | Stretch. Logic is covered by unit and API tests. The UI was checked by hand in Chrome for sign-up, docs, sheets, upload and the Council; sync with a second user was checked with a scripted peer, and the viewer view, share/members dialogs, rename/delete dialogs and import were not exercised in a browser. |
-| Live revocation of open editing sessions | Role is checked when a ticket is issued. A removed member keeps an already-open socket until it reconnects (tickets last 60 s). |
-| Server-side logout | Logout clears the cookie; the 7-day session token is not revoked on the server. |
+| Instant revocation of open editing sessions | The sync server re-checks membership in Postgres on every connect and every `REVALIDATE_SECONDS` (default 30), then closes the socket of a removed or demoted member. The API does not push a disconnect on role change, so access can last up to that interval. |
+| Server-side logout | Logout clears the cookie; the session token (24 h by default, `SESSION_TTL_HOURS`) is not revoked on the server. There is no revocation list. |
 | Cloud deploy, Google sign-in, share links, slides, PDF/docx/xlsx | Out of scope. |
 | Sheet niceties (formatting, copy/paste ranges, more than 26×100) | Out of scope for the slice. |
 | Drag-and-drop moves, workspace rename/delete, profile editing, upload progress, cancelling a council run | Not built; the API supports moving files and folders. |
