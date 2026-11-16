@@ -1,7 +1,7 @@
 # Hardening branch — PR description
 
 Branch `hardening`. Not pushed. Built from local `main` (e337935), which is **22 commits ahead of `origin/main`**
-(docLM scaffolding and one council fix), so a PR against `origin/main` shows 36 commits: 14 hardening ones and those 22.
+(docLM scaffolding and one council fix), so a PR against `origin/main` shows 37 commits: 15 hardening ones and those 22.
 
 ## What this changes
 - **Network**: db/api/sync published on 127.0.0.1 only; no default DB password (compose refuses an empty one); `make env` generates
