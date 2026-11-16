@@ -24,6 +24,8 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-coedit}:${POSTGRES_PASSWORD:?run make env}@db:5432/${POSTGRES_DB:-coedit}
       BLOB_DIR: /data/blobs
+      # The bundled web proxy (on the compose network) tells the API the client address; trust only that.
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES-172.16.0.0/12,192.168.0.0/16}
     volumes: [blobs:/data/blobs]
     # Linux has no host.docker.internal by default; this makes the Ollama preset work there too.
     extra_hosts: ["host.docker.internal:host-gateway"]

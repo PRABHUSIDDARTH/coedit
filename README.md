@@ -58,7 +58,7 @@ Useful switches in `.env`:
 | `STORAGE_BACKEND` | `local` (default: the `/data/blobs` volume) or `nexuscloud`. See "Optional: NexusCloud storage". |
 | `DB_PORT` | Host port for Postgres (default 5433, because 5432 is often taken). |
 | `SESSION_TTL_HOURS` | Session cookie/JWT lifetime, default 24. Logout does not revoke a copied token. |
-| `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_IP_MAX`, `RATE_LIMIT_EMAIL_MAX`, `RATE_LIMIT_TRUST_FORWARDED` | Login/register limits (in memory, per process; 0 disables a limit; defaults 900 s, 30, 8). 429 with `Retry-After`. |
+| `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_IP_MAX`, `RATE_LIMIT_EMAIL_MAX`, `RATE_LIMIT_TRUSTED_PROXIES` | Login/register limits (in memory, per process; 0 disables a limit; defaults 900 s, 30, 8). 429 with `Retry-After`. |
 | `MAX_MESSAGE_BYTES`, `MAX_CONNECTIONS_PER_DOC` | Sync server: largest WebSocket message (default 8 MiB) and connections per document (default 50). |
 | `REVALIDATE_SECONDS`, `MEMBERSHIP_CHECK` | Sync server re-checks roles in Postgres on connect and every N seconds (default 30); removed/demoted members are disconnected. |
 | `ENABLE_HSTS` | Build-time: `1` adds `Strict-Transport-Security` (only when served over HTTPS). |
@@ -234,9 +234,11 @@ against the running stack (it creates `smoke-*@example.com` users).
 - **GPL-3.0-or-later** for the whole repository, because HyperFormula (GPL) is linked into the web app.
 - **The council is a hypothesis.** Nothing here shows that several models plus critique beat a single model;
   that was not measured.
-- **Rate limits are in memory** (per API process; reset on restart, not shared between replicas). Behind the
-  bundled web proxy alone, the API sees one client address for everyone, so the per-IP login limit is then
-  shared by all users; see `RATE_LIMIT_TRUST_FORWARDED` in `.env.example`.
+- **Rate limits are in memory** (per API process; reset on restart, not shared between replicas). The API
+  believes `X-Forwarded-For` only from peers in `RATE_LIMIT_TRUSTED_PROXIES` (compose: the Docker bridge
+  ranges, i.e. the bundled web proxy). That proxy passes a client-supplied header through unchanged, so with
+  `:5173` exposed directly a client can choose its own per-IP bucket; the per-email limit still applies. For a
+  per-IP limit that holds, put a reverse proxy that overwrites the header in front of the web port.
 - **No total document size cap in sync.** Hocuspocus has no such option; only the size of one message
   (`MAX_MESSAGE_BYTES`) and connections per document (`MAX_CONNECTIONS_PER_DOC`) are limited.
 

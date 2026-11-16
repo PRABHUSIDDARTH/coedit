@@ -8,6 +8,7 @@ Every attempt counts, successful or not, per client IP and per (scope, email). L
 `RATE_LIMIT_*` settings; a max of 0 turns that limit off.
 """
 
+import ipaddress
 import math
 import time
 from collections import deque
@@ -51,20 +52,32 @@ class SlidingWindowLimiter:
 limiter = SlidingWindowLimiter()
 
 
-def client_ip(request: Request) -> str:
-    """The peer address, or with RATE_LIMIT_TRUST_FORWARDED the last X-Forwarded-For entry.
+def _parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    try:
+        return ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
 
-    The last entry is the one appended by the reverse proxy closest to the API; earlier entries can
-    be forged by the client. Only enable the setting behind a proxy that sets the header, otherwise
-    anyone can pick their own bucket. Behind the bundled Next proxy alone the API sees the web
-    container's address for every user, so the per-IP limit is then shared by all users.
+
+def client_ip(request: Request) -> str:
+    """The socket peer, unless that peer is a configured trusted proxy (RATE_LIMIT_TRUSTED_PROXIES):
+    then the last X-Forwarded-For entry (the address that proxy saw), if it is a valid IP.
+
+    From any other peer the header is ignored, so a client cannot choose its own bucket. Caveat for the
+    bundled web proxy: Next sets X-Forwarded-For to the client's address only when the client sent none
+    and passes a client-supplied value through unchanged, so with :5173 exposed directly a client can
+    still pick its bucket. The per-email limit is unaffected. Put a reverse proxy that overwrites the
+    header in front of the web port if the per-IP limit has to hold against a determined client.
     """
-    if get_settings().rate_limit_trust_forwarded:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        last = forwarded.split(",")[-1].strip()
-        if last:
-            return last
-    return request.client.host if request.client else "unknown"
+    peer = request.client.host if request.client else "unknown"
+    networks = get_settings().trusted_proxy_networks
+    peer_ip = _parse_ip(peer)
+    if networks and peer_ip is not None and any(peer_ip in net for net in networks):
+        last = request.headers.get("x-forwarded-for", "").split(",")[-1]
+        forwarded = _parse_ip(last)
+        if forwarded is not None:
+            return str(forwarded)
+    return peer
 
 
 def enforce(request: Request, scope: str, email: str) -> None:

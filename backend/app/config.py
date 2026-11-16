@@ -1,3 +1,4 @@
+import ipaddress
 from functools import lru_cache
 from typing import Literal
 
@@ -24,8 +25,9 @@ class Settings(BaseSettings):
     rate_limit_window_seconds: int = Field(default=900, ge=1)
     rate_limit_ip_max: int = Field(default=30, ge=0)
     rate_limit_email_max: int = Field(default=8, ge=0)
-    # Use the last X-Forwarded-For entry as the client IP. Only behind a proxy that sets it.
-    rate_limit_trust_forwarded: bool = False
+    # Comma-separated CIDRs of proxies whose X-Forwarded-For may be believed (the last entry is the
+    # client). Empty = never trust the header. See app/ratelimit.py for what this does and does not protect.
+    rate_limit_trusted_proxies: str = ""
     blob_dir: str = "./data/blobs"
     max_upload_bytes: int = 50 * 1024 * 1024
     # Where new blob versions are written. "local" (default) is the volume above; "nexuscloud"
@@ -53,6 +55,21 @@ class Settings(BaseSettings):
     # preset (Ollama on this machine, a LAN vLLM). MUST stay off in any hosted deployment:
     # with it on, a user can make the API server call internal services.
     council_allow_local_providers: bool = False
+
+    @field_validator("rate_limit_trusted_proxies")
+    @classmethod
+    def _trusted_proxies_are_cidrs(cls, value: str) -> str:
+        for part in (p.strip() for p in value.split(",") if p.strip()):
+            ipaddress.ip_network(part, strict=False)  # ValueError -> startup fails loudly
+        return value
+
+    @property
+    def trusted_proxy_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+        return [
+            ipaddress.ip_network(p.strip(), strict=False)
+            for p in self.rate_limit_trusted_proxies.split(",")
+            if p.strip()
+        ]
 
     @model_validator(mode="after")
     def _nexuscloud_needs_settings(self) -> "Settings":

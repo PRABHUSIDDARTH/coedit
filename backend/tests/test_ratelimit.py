@@ -10,13 +10,11 @@ from tests.conftest import PASSWORD, register, unique_email
 def limits(monkeypatch: pytest.MonkeyPatch):
     """Lower the limits for one test (settings are cached, so patch the instance)."""
 
-    def apply(
-        ip: int = 100000, email: int = 100000, trust: bool = False, window: int = 900
-    ) -> None:
+    def apply(ip: int = 100000, email: int = 100000, trusted: str = "", window: int = 900) -> None:
         s = get_settings()
         monkeypatch.setattr(s, "rate_limit_ip_max", ip)
         monkeypatch.setattr(s, "rate_limit_email_max", email)
-        monkeypatch.setattr(s, "rate_limit_trust_forwarded", trust)
+        monkeypatch.setattr(s, "rate_limit_trusted_proxies", trusted)
         monkeypatch.setattr(s, "rate_limit_window_seconds", window)
 
     return apply
@@ -86,8 +84,11 @@ async def test_register_is_limited_separately_from_login(client: AsyncClient, li
     assert (await _login(client, unique_email())).status_code == 401  # login bucket untouched
 
 
-async def test_forwarded_header_ignored_unless_trusted(client: AsyncClient, limits) -> None:
-    limits(ip=2, trust=False)
+# httpx's ASGI transport presents every request as coming from 127.0.0.1.
+
+
+async def test_forwarded_header_ignored_when_trust_is_off(client: AsyncClient, limits) -> None:
+    limits(ip=2, trusted="")
     for i in range(2):
         await _login(client, unique_email(), headers={"X-Forwarded-For": f"9.9.9.{i}"})
     # Spoofing a new address does not buy a new bucket.
@@ -95,10 +96,39 @@ async def test_forwarded_header_ignored_unless_trusted(client: AsyncClient, limi
     assert r.status_code == 429
 
 
-async def test_trusted_forwarded_header_uses_last_entry(client: AsyncClient, limits) -> None:
-    limits(ip=1, trust=True)
-    # A forged first entry is ignored; the proxy-appended last entry picks the bucket.
+async def test_spoofed_header_from_untrusted_peer_is_ignored(client: AsyncClient, limits) -> None:
+    limits(ip=2, trusted="10.0.0.0/8")  # the peer (127.0.0.1) is not inside this range
+    for i in range(2):
+        await _login(client, unique_email(), headers={"X-Forwarded-For": f"9.9.9.{i}"})
+    r = await _login(client, unique_email(), headers={"X-Forwarded-For": "9.9.9.200"})
+    assert r.status_code == 429
+
+
+async def test_trusted_peer_header_selects_bucket_by_last_entry(
+    client: AsyncClient, limits
+) -> None:
+    limits(ip=1, trusted="10.0.0.0/8, 127.0.0.0/8")
+    # A forged first entry is ignored; the last entry (appended by the trusted proxy) picks the bucket.
     r1 = await _login(client, unique_email(), headers={"X-Forwarded-For": "1.1.1.1, 10.0.0.1"})
     r2 = await _login(client, unique_email(), headers={"X-Forwarded-For": "2.2.2.2, 10.0.0.1"})
     r3 = await _login(client, unique_email(), headers={"X-Forwarded-For": "1.1.1.1, 10.0.0.2"})
     assert (r1.status_code, r2.status_code, r3.status_code) == (401, 429, 401)
+
+
+async def test_trusted_peer_with_garbage_header_falls_back_to_peer(
+    client: AsyncClient, limits
+) -> None:
+    limits(ip=1, trusted="127.0.0.0/8")
+    r1 = await _login(client, unique_email(), headers={"X-Forwarded-For": "not-an-ip"})
+    r2 = await _login(client, unique_email())  # no header: the peer's own bucket, already used
+    assert (r1.status_code, r2.status_code) == (401, 429)
+
+
+def test_trusted_proxies_must_be_cidrs() -> None:
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(rate_limit_trusted_proxies="10.0.0.0/8, nonsense")
+    assert Settings(rate_limit_trusted_proxies="10.0.0.0/8, fd00::/8").trusted_proxy_networks
