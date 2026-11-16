@@ -23,7 +23,7 @@ HyperFormula).
 Sign-up and login, workspaces with owner/editor/viewer roles, the file tree (folders, rename,
 delete, import, upload), live-collaborative docs and sheets with cursors and presence, file
 uploads with versions and download, members, per-user provider keys, and the AI Council.
-Canvas and the admin console are labelled **Preview** and use sample data (see the table at the bottom).
+Canvases are real but **single-user** (saved automatically, no realtime, no images; see Known limitations). The admin console is labelled **Preview** and uses sample data.
 
 ## Setup
 
@@ -106,7 +106,7 @@ sessions, so you can sign in as a different user in each. Two browsers also work
                                          └──► Postgres      (doc_states table only)
 ```
 
-- **Frontend routes**: `/` landing, `/login`, `/signup`, `/app/*` (doc, sheet, file, council, settings, canvas preview) and `/admin/*` (preview). `/api/*` is a streaming proxy route in the Next server; it forwards cookies and the CSRF header and streams 50 MB uploads. Next cannot proxy WebSockets, so the browser reaches the sync server directly on `:1234`: if you deploy behind a reverse proxy, expose that port or route `/sync` yourself and set `NEXT_PUBLIC_SYNC_URL`.
+- **Frontend routes**: `/` landing, `/login`, `/signup`, `/app/*` (doc, sheet, canvas, file, council, settings) and `/admin/*` (preview). `/api/*` is a streaming proxy route in the Next server; it forwards cookies and the CSRF header and streams 50 MB uploads. Next cannot proxy WebSockets, so the browser reaches the sync server directly on `:1234`: if you deploy behind a reverse proxy, expose that port or route `/sync` yourself and set `NEXT_PUBLIC_SYNC_URL`.
 - **Roles** live on the workspace: owner, editor, viewer. Every API route checks the caller's
   role (`require_role`): non-members get 404, too-low roles get 403.
 - **Live editing**: the browser asks the API for a ticket (`POST /api/files/{id}/ws-ticket`).
@@ -258,7 +258,17 @@ Fix with the smallest change in `frontend/src/lib/security-headers.ts`, then set
 - **Council runs are in-process.** A run is an `asyncio` task inside the API process: no queue, no per-user
   concurrency limit (the per-run spend cap is the only limit). A restart fails runs that were active.
 - **NexusCloud storage is stub-tested only.** No real NexusCloud service was used.
-- **Canvas and the Admin console are mock-data previews** and labelled so in the UI.
+- **Canvas is persisted but single-user, no realtime.** A canvas is a file kind (`canvas`) with one stored scene
+  (`canvas_scenes`, migration 0009): Excalidraw elements plus background colour and grid only. Autosave sends the whole scene
+  with the revision it was based on; a save from a stale tab gets a conflict and the editor offers "Load their version" or
+  "Overwrite with mine". There is no live co-editing and no version history (a revision counter only, like docs and sheets
+  have no history). **No images**: the image tool is disabled, and image, embeddable and iframe elements are rejected by the
+  API. The scene is limited to 5 MiB (fixed in code, 413 above that) and 20,000 elements. Element links keep only
+  http, https and mailto (others are dropped on save and on load). Viewers get view-only mode and the API rejects their saves
+  (403); a role change reaches an open canvas within about 30 seconds (the file's tree is re-read) or at the next failed save.
+  PNG and SVG export run in the browser. Excalidraw loads its fonts from esm.sh (see the CSP section). Not verified in a browser yet:
+  see `docs/CANVAS_BROWSER_CHECK.md`.
+- **The Admin console is a mock-data preview** and labelled so in the UI.
 - **GPL-3.0-or-later** for the whole repository, because HyperFormula (GPL) is linked into the web app.
 - **The council is a hypothesis.** Nothing here shows that several models plus critique beat a single model;
   that was not measured.
@@ -287,7 +297,8 @@ Fix with the smallest change in `frontend/src/lib/security-headers.ts`, then set
 |---|---|
 | **No council provider has been run against its real API, including Groq, NVIDIA NIM and Ollama.** The Anthropic, OpenAI and Google adapters use the official SDKs and the OpenAI-compatible adapter uses the OpenAI SDK; all are tested against local stubs of each API (one contract suite; the Groq, NIM and Ollama stubs mimic those servers' reply shapes from their documented behaviour, not from recorded traffic), never the real services. For the compatible providers the model list, `max_tokens` spelling, usage fields and Ollama's `/api/tags` fallback are the likeliest to differ from the stubs. Model ids and prices were read from the vendors' pricing pages on 2026-11-15 and not otherwise verified; reasoning-effort/thinking parameters in particular may need adjusting for a given model. | The builder had no keys, and automated tests never call real APIs. First live run: use a small cap. |
 | A provider without a key takes part as a **demo seat** (canned text, labelled "demo" in the panel). | Lets one key be enough to try the flow. |
-| **Canvas and the admin console are previews.** They run on sample data (and simulated collaborators) and carry a "Preview" label. | No backend exists for either yet. Docs, sheets, files, members, keys and the Council use the real API. |
+| **The admin console is a preview.** It runs on sample data and carries a "Preview" label. | No backend exists for it yet. Docs, sheets, canvases, files, members, keys and the Council use the real API. |
+| **No realtime canvas, no canvas images, no canvas history.** | A live Yjs canvas would bypass the server-side checks (size cap, link sanitising, image rejection) and needs tombstones the stored schema drops; images need file storage. See `docs/ARCHITECTURE.md` (Canvas). |
 | The Council shows each provider's steps, tokens and spend, but not the models' text as it streams. | The API reports run steps and writes the result to files; the text of each draft is not exposed. |
 | Council research from URLs (server-side fetch with SSRF guard) | Not built. |
 | Playwright end-to-end tests | Stretch. Logic is covered by unit and API tests. The UI was checked by hand in Chrome for sign-up, docs, sheets, upload and the Council; sync with a second user was checked with a scripted peer, and the viewer view, share/members dialogs, rename/delete dialogs and import were not exercised in a browser. |
