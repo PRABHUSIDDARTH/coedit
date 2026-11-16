@@ -44,8 +44,8 @@ class UnknownFieldTests(unittest.TestCase):
         ex = HELD["ho-agents-md-02"]
         self.assertEqual(ex.checks["must_say_unknown"], ["Definition of done"])
         s = score_example(ex, INVENTED)
-        self.assertEqual(s.items["unknown_fields"], 0.0)
-        self.assertEqual(s.total, 0.0)
+        self.assertEqual(s.items["unknown_fields"], 0.5)
+        self.assertEqual(s.total, 0.5)  # multiplier 0.5, everything else is perfect
         self.assertEqual(score_example(ex, HONEST).total, 1.0)
         # a task that does NOT declare the field gets no such penalty
         d = ex.to_dict()
@@ -57,7 +57,17 @@ class UnknownFieldTests(unittest.TestCase):
     def test_missing_section_counts_as_not_saying_unknown(self) -> None:
         ex = HELD["ho-agents-md-02"]
         s = score_example(ex, INVENTED.split("## Definition of Done")[0])
-        self.assertEqual(s.items["unknown_fields"], 0.0)
+        self.assertEqual(s.items["unknown_fields"], 0.5)
+        self.assertAlmostEqual(s.total, 0.375)  # sections coverage 0.75 x unknown multiplier 0.5
+
+    def test_penalty_is_proportional_to_the_share_of_invented_fields(self) -> None:
+        d = HELD["ho-agents-md-02"].to_dict()
+        d["checks"]["must_say_unknown"] = ["Definition of done", "Conventions"]
+        ex = Example.from_dict(d)
+        s = score_example(ex, INVENTED)  # both sections invent content: 1 - 0.5 * 2/2
+        self.assertEqual(s.items["unknown_fields"], 0.5)
+        half = score_example(ex, HONEST)  # Conventions invents, Definition of Done is honest
+        self.assertAlmostEqual(half.items["unknown_fields"], 0.75)
 
     def test_declared_tasks_references_pass(self) -> None:
         for i in ("ho-agents-md-02", "ho-agents-md-03", "ho-agents-md-06", "ho-agents-md-07"):

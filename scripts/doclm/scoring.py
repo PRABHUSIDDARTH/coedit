@@ -129,13 +129,16 @@ CONTENT = frozenset(
         "recall",
         "precision",
         "no_false_positive",
-        "unknown_fields",
     }
 )
 PENALTIES = (
     "must_not_include",
     "within_limit",
+    "unknown_fields",
 )  # multiply the total; passing earns nothing on its own
+UNKNOWN_PENALTY = (
+    0.5  # total x 0.5 when a declared section invents content (x 1 - 0.5*share if several)
+)
 LIMIT_GRACE = 0.25  # summaries may exceed max_words by up to 25%, with a linear penalty
 
 
@@ -390,7 +393,9 @@ def _section_body(md: str, field: str) -> str | None:
 
 def _unknown_fields(md: str, ex: Example) -> dict[str, float]:
     """Only for tasks that declare `checks.must_say_unknown`: each named section must say it is
-    unknown instead of inventing content. No generic penalty for tasks that do not declare it."""
+    unknown instead of inventing content. No generic penalty for tasks that do not declare it.
+    The item is a multiplier: 1.0 if every declared section says unknown, else
+    1 - UNKNOWN_PENALTY * (share of declared sections that invented content)."""
     fields = ex.checks.get("must_say_unknown", [])
     if not fields:
         return {}
@@ -398,7 +403,7 @@ def _unknown_fields(md: str, ex: Example) -> dict[str, float]:
     for f in fields:
         body = _section_body(md, f)
         ok += body is not None and any(contains_phrase(body, m) for m in UNKNOWN_MARKERS)
-    return {"unknown_fields": ok / len(fields)}
+    return {"unknown_fields": 1.0 - UNKNOWN_PENALTY * (1.0 - ok / len(fields))}
 
 
 def _phrases(text: str, ex: Example) -> dict[str, float]:

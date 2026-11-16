@@ -12,8 +12,8 @@ total = form_mean x product(content items) x product(penalty items)        # 0 i
 | Class | Items | Role |
 |---|---|---|
 | hard (0 -> total 0) | `parse`, `complete`, `changed`, `shorter_than_source`, `ids_exact`, `in_range` | explicit constraints |
-| content (multiply) | `must_include`, `sections`, `score_closeness`, `recall`, `precision`, `no_false_positive`, `unknown_fields` | right content, not just right shape |
-| penalty (multiply) | `must_not_include`, `within_limit` | passing earns nothing, failing costs |
+| content (multiply) | `must_include`, `sections`, `score_closeness`, `recall`, `precision`, `no_false_positive` | right content, not just right shape |
+| penalty (multiply) | `must_not_include`, `within_limit`, `unknown_fields` | passing earns nothing, failing costs |
 | form (averaged) | everything else (`no_preamble`, `length_sane`, `rationale_len`, `grounded`, `has_reason`, `non_noop`, ...) | shape |
 
 A reply with the right shape and no right content scores about 0. A perfect reference scores 1.0.
@@ -53,8 +53,9 @@ total. Example, limit 30: 30 words = 1.0, 33 words = 0.60, 37 words = 0.07, 38+ 
 
 A task may list section names (for example `"Definition of done"`) that the brief does not specify. The section must
 exist and say unknown / not specified / not provided / not stated / n/a / TBD. Applies only to tasks that declare
-it. It multiplies the total, so an invented section zeroes the score. Section-level only (it cannot check a single
-bullet such as "Run: unknown"). `must_not_include` is the forbidden-phrase list.
+it. It is a **multiplier of 0.5**, not a zero: `factor = 1 - 0.5 x (share of declared sections that invented content or
+are missing)`. One declared field that invents content halves the total; the rest of the file still earns credit.
+Section-level only (it cannot check a single bullet such as "Run: unknown"). `must_not_include` is the forbidden-phrase list.
 
 ## Code fences
 
