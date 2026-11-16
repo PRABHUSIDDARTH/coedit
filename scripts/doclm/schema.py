@@ -270,10 +270,22 @@ class Example:
         if self.split == "heldout" and self.reference is None:
             raise SchemaError(f"{w}.reference: held-out examples need a reference")
         for key, vals in self.checks.items():
-            if key not in {"must_include", "must_not_include", "must_say_unknown"}:
+            if key not in {
+                "must_include",
+                "must_not_include",
+                "must_say_unknown",
+                "optional_edits",
+            }:
                 raise SchemaError(f"{w}.checks: unknown key {key!r}")
             if not isinstance(vals, list):
                 raise SchemaError(f"{w}.checks.{key}: expected a list")
+            if key == "optional_edits":  # indices of reference changes that may be skipped
+                n = len((self.reference or {}).get("changes", []))
+                if self.task != "suggest_edits" or not all(
+                    isinstance(v, int) and not isinstance(v, bool) and 0 <= v < n for v in vals
+                ):
+                    raise SchemaError(f"{w}.checks.optional_edits: indices of reference changes")
+                continue
             for v in vals:  # must_include entries may be a list of acceptable alternatives
                 ok = isinstance(v, str) and v
                 if key == "must_include" and isinstance(v, list):

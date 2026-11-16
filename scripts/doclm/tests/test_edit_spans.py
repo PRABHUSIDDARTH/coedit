@@ -11,7 +11,7 @@ HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 
 import make_seed_data
-from schema import EditsOutput, read_jsonl
+from schema import EditsOutput, Example, SchemaError, read_jsonl
 from scoring import _apply, _find_span, score_example
 
 HELD = {e.id: e for e in read_jsonl(HERE / "data" / "heldout.draft.jsonl")}
@@ -118,3 +118,76 @@ class EditSpanTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OptionalEditTests(unittest.TestCase):
+    """ho-suggest-edits-06: the reference edit is stylistic, so it is optional."""
+
+    def setUp(self) -> None:
+        self.ex = HELD["ho-suggest-edits-06"]
+        self.assertEqual(self.ex.checks["optional_edits"], [0])
+
+    def test_absence_is_not_penalised(self) -> None:
+        s = score_example(self.ex, reply())
+        self.assertEqual((s.items["recall"], s.items["precision"], s.total), (1.0, 1.0, 1.0))
+
+    def test_presence_is_not_spurious_in_any_wording(self) -> None:
+        for rep in (
+            "and then back to 3 pm",
+            "and then back again to 3 pm",
+            "and then once more to 3 pm",
+        ):
+            s = score_example(self.ex, reply(chg("and then again to 3 pm", rep)))
+            self.assertEqual((s.items["recall"], s.items["precision"]), (1.0, 1.0), rep)
+
+    def test_a_change_elsewhere_is_still_spurious(self) -> None:
+        s = score_example(self.ex, reply(chg("Everyone is confused", "Everybody is confused")))
+        self.assertEqual(s.items["precision"], 0.0)
+        mixed = score_example(
+            self.ex,
+            reply(
+                chg("and then again to 3 pm", "and then back to 3 pm"),
+                chg("Everyone is confused", "All are confused"),
+            ),
+        )
+        self.assertAlmostEqual(mixed.items["precision"], 0.5)
+
+    def test_validation_of_optional_edits(self) -> None:
+        d = self.ex.to_dict()
+        for bad in ([5], [-1], ["0"], [True]):
+            d["checks"]["optional_edits"] = bad
+            with self.assertRaises(SchemaError):
+                Example.from_dict(d)
+        d["checks"]["optional_edits"] = [0]
+        d["task"] = "summarize"
+        with self.assertRaises(SchemaError):
+            Example.from_dict(d)
+
+    def test_required_edits_elsewhere_are_not_optional(self) -> None:
+        ex = HELD["ho-suggest-edits-07"]
+        self.assertNotIn("optional_edits", ex.checks)
+        self.assertEqual(score_example(ex, reply()).total, 0.0)
+
+
+class OrganizationAlternativeTests(unittest.TestCase):
+    def test_big_and_large_organizations_accepted_but_rewrite_01_stays_strict(self) -> None:
+        ex = HELD["ho-summarize-04"]
+        base = "A survey of 400 engineers found 62 percent review code within a day, and teams with a checklist were twice as likely to; the sample came only from {}."
+        for phrase in (
+            "big organizations",
+            "large organizations",
+            "a large organization",
+            "large companies",
+        ):
+            self.assertEqual(
+                score_example(ex, base.format(phrase)).items["must_include"], 1.0, phrase
+            )
+        self.assertLess(score_example(ex, base.format("some firms")).total, 1.0)
+        rw = HELD["ho-rewrite-01"]
+        self.assertEqual(
+            score_example(
+                rw,
+                "To cancel your plan, send a written request no later than a month before it renews.",
+            ).total,
+            0.0,
+        )

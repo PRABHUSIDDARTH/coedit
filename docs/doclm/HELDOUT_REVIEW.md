@@ -83,6 +83,13 @@ substring checks and were replaced). `ho-suggest-edits-01` and `-03` now rely on
 **`must_say_unknown: ["Definition of done"]` added** to `ho-agents-md-02`, `-03`, `-06`, `-07` (the briefs do not say
 what "done" means). `seed-agents-md-02` also declares it.
 
-**Still fragile after the fixes (please look):** `ho-summarize-04` (a paraphrase like "big organizations" is still
-rejected), `ho-rewrite-01` (a human may accept "a month" for 30 days), `ho-suggest-edits-06` (the reference edit is
-optional and stylistic). These three are recorded as `ambiguous` in `known_good_variants.jsonl`.
+**Final tweaks (the last check changes before the baseline):**
+- `ho-summarize-04`: `big organizations` and `large organizations` added to the "large companies" alternatives
+  (plural stems make "organization" match too).
+- `ho-suggest-edits-06`: new `optional_edits: [0]`. The reference edit ("and then back to 3 pm") is stylistic, so
+  skipping it is not penalised and a targeted change on that span is never spurious.
+- `must_say_unknown` is now a 0.5 multiplier instead of a zero (see SCORING.md).
+- `ho-rewrite-01` stays strict on purpose: "a month" does not count as "30 days". It is the one remaining
+  `ambiguous` entry in `known_good_variants.jsonl`.
+
+**Still fragile (please look):** `ho-rewrite-01` (above), and every check that lists one phrasing only.

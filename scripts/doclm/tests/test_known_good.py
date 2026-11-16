@@ -65,6 +65,8 @@ class BothDirectionsTests(unittest.TestCase):
         amb = [g for g in self.good if g.get("status") == "ambiguous"]
         self.assertTrue(all(g.get("ambiguity_note") for g in amb))
         self.assertLessEqual(len(amb), len(self.good) // 4)
+        # after the final tweaks only the strict "a month vs 30 days" case stays ambiguous
+        self.assertEqual([g["id"] for g in amb], ["good-ho-rewrite-01-blind2"])
 
     def test_known_bad_still_low(self) -> None:
         high = [

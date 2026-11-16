@@ -47,6 +47,9 @@ total. Example, limit 30: 30 words = 1.0, 33 words = 0.60, 37 words = 0.07, 38+ 
   (original no longer than 3x the expected error + 60 characters). Everything else (wrong span, ungrounded,
   meaning-changing rewording, a change to a document that needs none) is spurious.
 - If the reference needs no change, any change fails (`no_false_positive`).
+- `checks.optional_edits` (list of reference-change indices) marks stylistic edits as optional: skipping one is not
+  penalised (recall ignores it; if every expected edit is optional, recall is 1.0), and a targeted change on its span
+  is never spurious, in any wording. Anything elsewhere is still spurious. Used by `ho-suggest-edits-06` only.
 - Known weakness: a harmless extra improvement outside the expected spans is counted as spurious.
 
 ## Invented content (`checks.must_say_unknown`, optional)
@@ -71,5 +74,5 @@ fence at the end of the last file.
 ## Two-way tests
 
 `data/known_bad.jsonl` (60 outputs, must score <= 0.30) and `data/known_good_variants.jsonl` (36 variants, must
-score >= 0.80, except entries marked `ambiguous`, which are reported but not asserted). Ten variants were written
-blind to the checks. See `tests/test_known_good.py`.
+score >= 0.80, except entries marked `ambiguous`, which are reported but not asserted; only `a month` for `30 days` is
+left ambiguous). Ten variants were written blind to the checks. See `tests/test_known_good.py`.

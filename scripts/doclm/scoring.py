@@ -238,17 +238,20 @@ def _score_edit_spans(
     """Span-based scoring. recall: share of expected errors actually FIXED once the model's
     changes are applied. precision: share of the model's changes that fix an expected error on
     their own; everything else (wrong span, ungrounded, meaning-altering rewording, a change to
-    a document that needs none) is spurious. A document that needs no change: any change fails."""
+    a document that needs none) is spurious. A document that needs no change: any change fails.
+    `checks.optional_edits` lists reference-change indices that are optional (stylistic): skipping
+    one is not penalised, and a targeted change on its span is never spurious."""
     if not expected:
         return {"no_false_positive": float(not changes)}
     inc = ex.checks.get("must_include", [])
-    exp_spans: list[tuple[tuple[int, int], str, list[str]]] = []
+    optional = set(ex.checks.get("optional_edits", []))  # reference changes that may be skipped
+    exp_spans: list[tuple[tuple[int, int], str, list[str], bool]] = []
     for i, r in enumerate(expected):
         sp = _find_span(doc, r.original)
         if sp is None:
             continue  # reference does not match the document: caught by a test, never scored
         alts = [r.replacement] + (_alts(inc[i]) if i < len(inc) else [])
-        exp_spans.append((sp, r.original, alts))
+        exp_spans.append((sp, r.original, alts, i in optional))
     grounded = [(sp, c.replacement) for sp, c in zip(spans, changes, strict=True) if sp is not None]
     fixed_all = _apply(doc, grounded)
     touched = [sp for sp in spans if sp is not None]  # a change must actually touch the span
@@ -256,22 +259,24 @@ def _score_edit_spans(
     def overlap(a: tuple[int, int], b: tuple[int, int]) -> bool:
         return a[0] < b[1] and b[0] < a[1]
 
+    required = [e for e in exp_spans if not e[3]]  # optional edits never count against recall
     fixed = sum(
         any(overlap(sp, t) for t in touched) and _span_fixed(doc, sp, orig, alts, fixed_all)
-        for sp, orig, alts in exp_spans
+        for sp, orig, alts, _opt in required
     )
     useful = 0
     for sp, c in zip(spans, changes, strict=True):
         if sp is None:
             continue
         alone = _apply(doc, [(sp, c.replacement)])
-        for esp, orig, alts in exp_spans:
+        for esp, orig, alts, opt in exp_spans:
             targeted = (sp[1] - sp[0]) <= 3 * (esp[1] - esp[0]) + _TARGET_SLACK
-            if overlap(sp, esp) and targeted and _span_fixed(doc, esp, orig, alts, alone):
+            # an optional edit is not spurious in any wording: it only has to touch that span
+            if overlap(sp, esp) and targeted and (opt or _span_fixed(doc, esp, orig, alts, alone)):
                 useful += 1
                 break
     return {
-        "recall": fixed / max(1, len(exp_spans)),
+        "recall": fixed / len(required) if required else 1.0,
         "precision": useful / len(changes) if changes else 1.0,
     }
 
