@@ -93,3 +93,22 @@ what "done" means). `seed-agents-md-02` also declares it.
   `ambiguous` entry in `known_good_variants.jsonl`.
 
 **Still fragile (please look):** `ho-rewrite-01` (above), and every check that lists one phrasing only.
+
+## Review batch 4 (draft lines 16-20): review mode, NOT approved, NOT committed
+
+Tasks: `ho-rewrite-07`, `-08`, `-09`, `ho-agents-md-01`, `-02`. Branch `docllm-batch4-review`. Nothing frozen, no baseline, no model run.
+Only the `checks` field of these five lines was edited; inputs and references are untouched (compared field by field against the copy taken before the edits).
+Replies called "probe" are ad-hoc replies written in a scratch directory outside the repo; they are not in `known_bad.jsonl` or `known_good_variants.jsonl`.
+
+**What was run:**
+- Schema validation of all 50 lines: OK. All 50 gold answers score 1.000 (re-run after the last edit).
+- `check_overlap.py` against `seed.jsonl` (the only training-side file): OK. Max 5-gram containment 0.000 for every pair for the five tasks, except `ho-agents-md-01` vs the `seed-agents-md-01` reference at 0.037 (threshold 0.40).
+- Existing entries: `known_bad` has 5 entries for `ho-agents-md-01` only; `known_good_variants` has one each for `ho-rewrite-07`, `-08`, `-09` and `ho-agents-md-02`. Everything else is probe-only (about 75 probes).
+- Model-free unit tests (without `test_doclm`, `test_freeze`, `test_serve_check`): 61 tests, all pass, including the new `tests/test_critical.py`.
+
+**Scorer changes made after the owner approved them (`scoring.py`, `schema.py`):** `checks.critical` (hard gate), `checks.must_include_raw` (raw case-folded substring), five extra `UNKNOWN_MARKERS` (`not defined`, `not mentioned`, `unspecified`, `to be determined`, `not given`; the fifth added on a later owner approval). Documented in `docs/doclm/SCORING.md`, including the known limits.
+
+**Checks changed on the five tasks:** facts moved to `critical` with alternatives (`10 minutes`/`10 min`; `seven business days`/`seven working days`; `refund`/`refunded`/`refunding`/`money back`/`reimburse`; `Dana reviewed`/`Dana checked`; `Luis approved`/`signed off`/`gave approval`/`gave his approval`; `client`/`customer`; `go 1.22`/`golang 1.22`; `environment variables`/`env vars`/`environment variable`/`env variables`/`from the environment`; `django 5`; `postgresql 16`/`postgres 16`); `go build ./...` and `go test ./...` in `must_include_raw` on `ho-agents-md-01`. "Working days" = business days and "reimburse" = refund are accepted alternatives by the owner's decision.
+
+**Not caught (measured with probes, still 1.000):** "at least seven business days", "do not process refunds within seven business days", "within seven business days before you send your return", "at least 10 minutes", "never sent it", "Luis approved it but we never sent it", "never run go build ./...", "never commit migrations", "put secrets in settings.py; do not use environment variables", "do not use pytest", invented done criteria on `ho-agents-md-01`.
+**Still below 1.000 for a correct answer (probes):** headings "Done criteria", "Definition-of-done", "## Done" (0.75 / 0.75 / 0.375) (heading variants left alone by the owner's decision). "Not given" now passes.

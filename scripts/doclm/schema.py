@@ -275,6 +275,8 @@ class Example:
                 "must_not_include",
                 "must_say_unknown",
                 "optional_edits",
+                "critical",
+                "must_include_raw",
             }:
                 raise SchemaError(f"{w}.checks: unknown key {key!r}")
             if not isinstance(vals, list):
@@ -288,7 +290,7 @@ class Example:
                 continue
             for v in vals:  # must_include entries may be a list of acceptable alternatives
                 ok = isinstance(v, str) and v
-                if key == "must_include" and isinstance(v, list):
+                if key in ("must_include", "critical") and isinstance(v, list):
                     ok = bool(v) and all(isinstance(a, str) and a for a in v)
                 if not ok:
                     raise SchemaError(f"{w}.checks.{key}: entries must be non-empty strings")
