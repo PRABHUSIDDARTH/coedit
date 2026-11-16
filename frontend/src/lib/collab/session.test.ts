@@ -10,6 +10,9 @@ describe("resolveSyncUrl", () => {
     expect(resolveSyncUrl("/sync", page)).toBe("ws://localhost:1234");
     expect(resolveSyncUrl("/sync", new URL("https://app.example.com/x"))).toBe("wss://app.example.com:1234");
   });
+  it("follows the page's LAN address, which is what the two-device demo relies on", () => {
+    expect(resolveSyncUrl("/sync", new URL("http://192.168.1.20:5173/app"))).toBe("ws://192.168.1.20:1234");
+  });
   it("uses NEXT_PUBLIC_SYNC_URL for a relative path when set", () => {
     vi.stubEnv("NEXT_PUBLIC_SYNC_URL", "wss://sync.example.com/ws");
     expect(resolveSyncUrl("/sync", page)).toBe("wss://sync.example.com/ws");

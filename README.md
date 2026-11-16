@@ -43,6 +43,25 @@ publish `:1234` yourself (or route `/sync` through a reverse proxy and set `NEXT
 `.env.example` ships empty secrets on purpose, and `docker compose` refuses an empty `POSTGRES_PASSWORD`.
 An existing `.env` keeps working unchanged (the Postgres volume was initialised with its password).
 
+### Two-device (LAN) demo
+
+By default sync is reachable only from this machine. To co-edit from a second device on the same network:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d     # publishes :1234 on all interfaces
+hostname -I                                                              # this machine's LAN address, e.g. 192.168.1.20
+```
+
+Open `http://192.168.1.20:5173` on **both** devices (not `localhost`: the browser derives the sync address from
+the page's hostname, `ws://<that host>:1234`, and the CSP allows exactly that). Register or sign in as two users
+in one workspace and edit the same doc. If it does not connect, check the host firewall for ports 5173 and 1234.
+Back to the safe default with `docker compose up -d` (without the second file).
+
+**Warning:** this exposes the sync server on your network over plain `ws://`. Connecting still needs a 60 s
+ticket signed by the API and the sync server re-checks membership in Postgres, but the port is open to anyone
+who can reach this machine, and everything (cookies, documents) travels unencrypted. Trusted networks only.
+The web port (`:5173`) is always on all interfaces; db and api stay on `127.0.0.1` even with this file.
+
 Open http://localhost:5173. Register, or after `make seed` sign in as `owner@example.com`,
 `editor@example.com` or `viewer@example.com` with the password you chose.
 
