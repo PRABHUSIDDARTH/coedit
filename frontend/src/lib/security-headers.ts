@@ -17,6 +17,18 @@ export interface HeaderOptions {
   syncUrl?: string;
   /** Send Strict-Transport-Security. Only for deployments served over HTTPS. */
   hsts?: boolean;
+  /** How the CSP is sent. Default "enforce". */
+  cspMode?: CspMode;
+}
+
+export type CspMode = "enforce" | "report-only" | "off";
+
+/** Parse CSP_MODE. Empty/unset = enforce; anything else unknown throws, so a typo cannot silently weaken the policy. */
+export function parseCspMode(raw: string | undefined): CspMode {
+  const value = (raw ?? "").trim().toLowerCase();
+  if (value === "" || value === "enforce") return "enforce";
+  if (value === "report-only" || value === "off") return value;
+  throw new Error(`CSP_MODE must be "enforce", "report-only" or "off" (got "${raw}")`);
 }
 
 function syncOrigin(syncUrl: string | undefined): string | null {
@@ -52,8 +64,16 @@ export function contentSecurityPolicy({ production, syncUrl }: HeaderOptions): s
 }
 
 export function securityHeaders(options: HeaderOptions): { key: string; value: string }[] {
+  const mode = options.cspMode ?? "enforce";
   const headers = [
-    { key: "Content-Security-Policy", value: contentSecurityPolicy(options) },
+    ...(mode === "off"
+      ? []
+      : [
+          {
+            key: mode === "report-only" ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy",
+            value: contentSecurityPolicy(options),
+          },
+        ]),
     { key: "X-Frame-Options", value: "DENY" },
     { key: "X-Content-Type-Options", value: "nosniff" },
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

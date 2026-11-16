@@ -81,6 +81,7 @@ Useful switches in `.env`:
 | `MAX_MESSAGE_BYTES`, `MAX_CONNECTIONS_PER_DOC` | Sync server: largest WebSocket message (default 8 MiB) and connections per document (default 50). |
 | `REVALIDATE_SECONDS`, `MEMBERSHIP_CHECK` | Sync server re-checks roles in Postgres on connect and every N seconds (default 30); removed/demoted members are disconnected. |
 | `ENABLE_HSTS` | Build-time: `1` adds `Strict-Transport-Security` (only when served over HTTPS). |
+| `CSP_MODE` | Build-time: `enforce` (default), `report-only` (same policy, sent as `Content-Security-Policy-Report-Only`) or `off` (no CSP header). Other security headers are always sent. Rebuild with `docker compose up -d --build web`. |
 | `API_TARGET` | Where the Next server proxies `/api` (read at runtime; Compose sets `http://api:8000`; default for local dev `http://localhost:8000`). |
 | `NEXT_PUBLIC_SYNC_URL` | Overrides the sync WebSocket address. Baked in at build time; empty means unset. By default the browser connects to port 1234 on the page's own host. |
 
@@ -237,6 +238,14 @@ the Docker `web` service needs `docker compose up -d --build web`.
 Backend tests use their own database (`coedit_test`), sync tests another (`coedit_sync_test`);
 neither touches your data. `cd sync && npx tsx scripts/smoke.ts` runs an end-to-end check
 against the running stack (it creates `smoke-*@example.com` users).
+
+### Content-Security-Policy
+
+The web app sends a CSP (script/style `'unsafe-inline'` for Next's inline scripts, the sync WebSocket on `:1234`,
+`esm.sh` for Excalidraw fonts, `frame-ancestors 'none'`; details in `docs/ARCHITECTURE.md`). It has not been
+exercised in a browser yet (see `docs/BROWSER_CHECK.md`). **If a page breaks under CSP, set `CSP_MODE=report-only`
+in `.env`, rebuild web, and open the browser console**: it lists each would-be violation without blocking anything.
+Fix with the smallest change in `frontend/src/lib/security-headers.ts`, then set it back to `enforce`.
 
 ## Known limitations
 

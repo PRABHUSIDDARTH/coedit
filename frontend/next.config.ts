@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import { securityHeaders } from "./src/lib/security-headers";
+import { parseCspMode, securityHeaders } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
   // Self-contained server for the Docker image (see Dockerfile).
@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   // hydration when the app is opened on 127.0.0.1 (a separate cookie jar, handy for a second user).
   allowedDevOrigins: ["127.0.0.1"],
   // Not applied to /api: the proxied API responses carry their own headers (downloads set a sandbox CSP).
-  // HSTS is opt-in at build time (ENABLE_HSTS=1) because it must only be sent over HTTPS.
+  // CSP_MODE (build time): enforce (default) | report-only | off. HSTS is opt-in at build time (ENABLE_HSTS=1) because it must only be sent over HTTPS.
   async headers() {
     return [
       {
@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
           production: process.env.NODE_ENV === "production",
           syncUrl: process.env.NEXT_PUBLIC_SYNC_URL,
           hsts: process.env.ENABLE_HSTS === "1",
+          cspMode: parseCspMode(process.env.CSP_MODE),
         }),
       },
     ];

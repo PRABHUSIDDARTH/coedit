@@ -13,7 +13,9 @@ FROM base AS build
 ARG NEXT_PUBLIC_SYNC_URL=""
 # 1 = send Strict-Transport-Security (baked in at build time; only when served over HTTPS).
 ARG ENABLE_HSTS=""
-ENV NEXT_PUBLIC_SYNC_URL=$NEXT_PUBLIC_SYNC_URL ENABLE_HSTS=$ENABLE_HSTS NEXT_TELEMETRY_DISABLED=1
+# enforce (default) | report-only | off. Baked in at build time.
+ARG CSP_MODE=""
+ENV NEXT_PUBLIC_SYNC_URL=$NEXT_PUBLIC_SYNC_URL ENABLE_HSTS=$ENABLE_HSTS CSP_MODE=$CSP_MODE NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN pnpm build
