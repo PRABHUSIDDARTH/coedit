@@ -56,7 +56,7 @@ SYSTEM_PROMPTS = {
     "suggest_edits": (
         "TASK: suggest_edits\nSuggest edits as ONE JSON object and nothing else (no code fences): "
         '{"changes": [{"location": "...", "original": "<exact text copied from the document>", '
-        '"replacement": "...", "reason": "..."}]}. An empty list is allowed.'
+        '"replacement": "...", "reason": "..."}]}. An empty list is allowed. If the document has no errors, the correct answer is an empty list: {"changes": []}.'
     ),
 }
 
