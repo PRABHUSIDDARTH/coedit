@@ -83,8 +83,23 @@ def main() -> int:
     import torch  # imported late so --help works without the training env
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
+    import time
+
+    if not torch.cuda.is_available():  # never fall back to CPU silently
+        print("ERROR: torch.cuda.is_available() is False; refusing to run on CPU. "
+              f"torch={torch.__version__} cuda_build={torch.version.cuda}", file=sys.stderr)
+        return 4
+    t0 = time.perf_counter()
     tok = AutoTokenizer.from_pretrained(args.model_path)
     model = AutoModelForCausalLM.from_pretrained(args.model_path, dtype=torch.bfloat16).cuda()
+    load_s = time.perf_counter() - t0
+    p0 = next(model.parameters())
+    print(json.dumps({
+        "load_seconds": round(load_s, 1), "device": str(p0.device),
+        "gpu": torch.cuda.get_device_name(0), "capability": list(torch.cuda.get_device_capability(0)),
+        "param_dtype": str(p0.dtype), "torch": torch.__version__, "cuda_build": torch.version.cuda,
+        "vram_allocated_mib": torch.cuda.memory_allocated() // 2**20,
+    }), flush=True)
     if args.adapter:
         from peft import PeftModel
 
@@ -110,7 +125,8 @@ def main() -> int:
                 "model": args.name,
                 "choices": [{"index": 0, "message": {"role": "assistant", "content": text},
                              "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": n_in, "completion_tokens": int(out.shape[1] - n_in)},
+                "usage": {"prompt_tokens": n_in, "completion_tokens": int(out.shape[1] - n_in),
+                          "peak_vram_mib": torch.cuda.max_memory_allocated() // 2**20},
             }).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
