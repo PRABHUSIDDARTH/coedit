@@ -116,7 +116,7 @@ POST run → validate caps → load+decrypt owner's 3 keys → asyncio task:
   there would be two sources of truth, the stored schema drops the tombstones realtime needs, and it cannot be tested without two real browsers. Revisit with server-side extraction in
   the sync sidecar (docs/RAG_PLAN.md D5 has the same need).
 - **Images:** out of scope for v1 (they need file storage and per-file limits).
-- **Not verified in a browser:** Excalidraw behaviour with `viewModeEnabled`, `tools.image: false`, restore of saved scenes, PNG/SVG export, font loading under the CSP. Checklist: `docs/CANVAS_BROWSER_CHECK.md`.
+- **Checked in a browser:** persists after reload, viewer read-only, PNG/SVG export, clean console/CSP, and a two-tab stale save that shows a conflict. **Not tested:** role changes on an open canvas. Checklist: `docs/CANVAS_BROWSER_CHECK.md`.
 
 ## Security notes
 - Passwords: argon2id. Session: JWT (HS256, `APP_SECRET`, `SESSION_TTL_HOURS`, default 24) in `httpOnly; SameSite=Lax` cookie; logout only clears the cookie, there is no server-side revocation list; `Secure` when not local. Mutating requests also require `X-Requested-With` header (cheap CSRF guard alongside SameSite).

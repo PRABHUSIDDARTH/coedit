@@ -31,8 +31,8 @@ export function Tour() {
         points={["Currency, percent, date and status columns", "A formula bar that shows what each cell is doing", "Collaborator selections in their own color"]}>
         <SheetDemo />
       </Row>
-      <Row id="canvas" title="Sketch the system before you write it down." body="A canvas next to your docs, with the same people and the same cursors. Draw the flow, then link it from the brief."
-        points={["Shapes, arrows and free drawing", "Everyone's pointer visible, never in your way", "Lives in the same workspace as your docs and sheets"]}>
+      <Row id="canvas" title="Sketch the system before you write it down." body="A canvas next to your docs, saved in the same workspace. Draw the flow on your own, then link it from the brief."
+        points={["Shapes, arrows and free drawing", "Single-user, saved automatically", "Lives in the same workspace as your docs and sheets"]}>
         <CanvasDemo />
       </Row>
       <Row flip id="council" title="Ask several minds at once." body="Pick three to six seats, each with a role. They discuss in turn, then the Council hands back one answer you can insert straight into your doc."

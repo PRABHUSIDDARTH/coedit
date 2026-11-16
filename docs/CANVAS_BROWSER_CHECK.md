@@ -1,7 +1,7 @@
 # Canvas: browser check and handoff
 
-Branch `canvas`. **Nothing in this file has been run in a browser** (no browser could reach the app from the build host; see `docs/BROWSER_CHECK.md`).
-Backend behaviour is covered by tests; the editor behaviour below is only checked by reading, typechecking and unit tests of its pure parts.
+Branch `canvas`. Five checks were run in a browser: persists after reload, viewer read-only, PNG/SVG export, clean console/CSP, and a two-tab stale save that shows a conflict. **Not tested:** role changes on an open canvas (demotion, removal) and everything else in the table below.
+Backend behaviour is covered by tests; editor behaviour beyond those five checks is only checked by reading, typechecking and unit tests of its pure parts.
 
 ## What is built
 Persisted, **single-user** canvases (no realtime, no images, no history). Details: README "Known limitations" and `docs/ARCHITECTURE.md` "Canvas".
