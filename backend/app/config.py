@@ -1,15 +1,48 @@
 import ipaddress
+from collections.abc import Mapping
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import quote
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def build_database_url(env: Mapping[str, str | None]) -> str:
+    """asyncpg URL from POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_HOST / POSTGRES_PORT (or DB_PORT) /
+    POSTGRES_DB. There is deliberately no password default."""
+
+    def get(*names: str, default: str = "") -> str:
+        for name in names:
+            if env.get(name):
+                return str(env[name])
+        return default
+
+    password = get("POSTGRES_PASSWORD")
+    if not password:
+        raise ValueError(
+            "POSTGRES_PASSWORD is not set (and DATABASE_URL is not set). Run `make env` to create "
+            ".env with generated secrets, or set DATABASE_URL."
+        )
+    user = quote(get("POSTGRES_USER", default="coedit"), safe="")
+    host = get("POSTGRES_HOST", default="localhost")
+    port = get("POSTGRES_PORT", "DB_PORT", default="5433")
+    db = get("POSTGRES_DB", default="coedit")
+    return f"postgresql+asyncpg://{user}:{quote(password, safe='')}@{host}:{port}/{db}"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=("../.env", ".env"), extra="ignore")
 
-    database_url: str = "postgresql+asyncpg://coedit:coedit@localhost:5433/coedit"
+    # Full URL, or leave empty and set the POSTGRES_* parts below (no password default).
+    database_url: str = ""
+    postgres_user: str = "coedit"
+    postgres_password: SecretStr = SecretStr("")
+    postgres_host: str = "localhost"
+    postgres_port: int = Field(
+        default=5433, validation_alias=AliasChoices("POSTGRES_PORT", "DB_PORT")
+    )
+    postgres_db: str = "coedit"
     # Required, no defaults: the app must not start with guessable secrets.
     app_secret: str = Field(min_length=32)
     ws_ticket_secret: str = Field(min_length=32)
@@ -55,6 +88,20 @@ class Settings(BaseSettings):
     # preset (Ollama on this machine, a LAN vLLM). MUST stay off in any hosted deployment:
     # with it on, a user can make the API server call internal services.
     council_allow_local_providers: bool = False
+
+    @model_validator(mode="after")
+    def _database_url_from_parts(self) -> "Settings":
+        if not self.database_url.strip():
+            self.database_url = build_database_url(
+                {
+                    "POSTGRES_USER": self.postgres_user,
+                    "POSTGRES_PASSWORD": self.postgres_password.get_secret_value(),
+                    "POSTGRES_HOST": self.postgres_host,
+                    "POSTGRES_PORT": str(self.postgres_port),
+                    "POSTGRES_DB": self.postgres_db,
+                }
+            )
+        return self
 
     @field_validator("rate_limit_trusted_proxies")
     @classmethod

@@ -24,17 +24,17 @@ os.environ["BLOB_DIR"] = tempfile.mkdtemp(prefix="coedit-test-blobs-")
 
 
 # Tests run against a separate database (<name>_test) so they never touch dev/demo data.
-def _default_database_url() -> str:
-    # `make env` writes DATABASE_URL (with the generated password) into .env for host-side use.
+def _base_database_url() -> str:
+    # DATABASE_URL, else the POSTGRES_* parts, from the environment or the repo's .env (`make env`).
     from dotenv import dotenv_values
 
-    env_file = Path(__file__).resolve().parents[2] / ".env"
-    return dotenv_values(env_file).get("DATABASE_URL") or (
-        "postgresql+asyncpg://coedit:coedit@localhost:5433/coedit"
-    )
+    from app.config import build_database_url
+
+    env = {**dotenv_values(Path(__file__).resolve().parents[2] / ".env"), **os.environ}
+    return env.get("DATABASE_URL") or build_database_url(env)
 
 
-_BASE_URL = os.environ.get("DATABASE_URL") or _default_database_url()
+_BASE_URL = _base_database_url()
 _PREFIX, _DB_NAME = _BASE_URL.rsplit("/", 1)
 _TEST_DB = f"{_DB_NAME}_test"
 os.environ["DATABASE_URL"] = f"{_PREFIX}/{_TEST_DB}"

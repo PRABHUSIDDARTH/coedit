@@ -22,10 +22,11 @@ function fromDotenv(key: string): string | undefined {
   }
 }
 const user = process.env.POSTGRES_USER ?? fromDotenv("POSTGRES_USER") ?? "coedit";
-const password = process.env.POSTGRES_PASSWORD ?? fromDotenv("POSTGRES_PASSWORD") ?? "coedit";
+const password = process.env.POSTGRES_PASSWORD ?? fromDotenv("POSTGRES_PASSWORD");
+if (!password) throw new Error("POSTGRES_PASSWORD is not set (environment or .env). Run `make env`.");
 const port = process.env.DB_PORT ?? fromDotenv("DB_PORT") ?? "5433";
 const TEST_DB = "coedit_sync_test";
-const base = `${user}:${password}@localhost:${port}`;
+const base = `${encodeURIComponent(user)}:${encodeURIComponent(password)}@localhost:${port}`;
 export const DATABASE_URL = `postgres://${base}/${TEST_DB}`;
 
 /** Create the sync test database if needed and bring it to the API's current schema, so the
