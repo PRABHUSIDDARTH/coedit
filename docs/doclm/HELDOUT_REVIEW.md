@@ -49,3 +49,40 @@ These are my guesses from reading the tasks. **No model has run on them yet**, s
 | 15 | `ho-suggest-edits-07` | "Data are" vs "Data is" and the wordy clause: more than one defensible edit; recall needs my exact span. |
 
 Also worth a glance: all 50 are short plain-English cases written by one author in one sitting, so they share my style; a model tuned on similar synthetic data would find them easier than real documents.
+
+## What changed in the held-out checks after the scorer fixes (draft, not frozen)
+
+Scoring rules are in `docs/doclm/SCORING.md`. The task inputs and references are unchanged; only `checks` changed.
+
+**Alternatives added to `must_include`** (the old literal phrase is still accepted):
+
+| Task | Old phrase | Now accepts | Why |
+|---|---|---|---|
+| `ho-summarize-01` | `3 km` | 3 km / 3 kilometres / 3 kilometers / 3 kilometre | unit spelling |
+| `ho-summarize-04` | `large companies` | large companies / big companies / 500 staff / 500 employees / over 500 / more than 500 | was fitted to my own reference; many valid ways to say it |
+| `ho-summarize-07` | `half price` | half price / 50 percent off / 50 percent discount | half price vs 50% |
+| `ho-architecture-md-01` | `deploy independently` | deploy independently / deployed independently / independent deployment / deploy separately | inflection/paraphrase |
+| `ho-architecture-md-03` | `streaming` | streaming / stream / real time | inflection |
+| `ho-architecture-md-05` | `in-process` | in-process / same process / in process | phrasing |
+| `ho-architecture-md-07` | `idempotent` | idempotent / idempotency / idempotence | inflection |
+| `ho-architecture-md-08` | `overwrite` | overwrite / overwritten / overwriting / overwrites | inflection (stemmer only handles plurals) |
+| `ho-agents-md-02` | `environment variables` | environment variables / env vars / environment variable | phrasing |
+| `ho-agents-md-03` | `unknown` | unknown / none / no automated tests / not available / n/a | literal 'unknown' too strict |
+| `ho-agents-md-04` | `doc comments` | doc comments / documentation comments / docs comments | phrasing |
+| `ho-agents-md-06` | `never be logged` | never be logged / never logged / not be logged / never log / must not log | phrasing |
+| `ho-agents-md-07` | `unknown` | unknown / not specified / not provided / n/a | literal 'unknown' too strict |
+
+**Resolved by normalisation alone (no edit needed):** `ho-rewrite-05` ("Friday 3 January" now matches "Friday, January 3rd"),
+`ho-summarize-05` ("30 November" matches "November 30"), `seed-architecture-md-01` ("retries" matches "retry"),
+`ho-rewrite-07` ("10 minutes" matches "10-minute" and "ten minutes"), `ho-rewrite-01` ("30 days" matches "thirty days").
+
+**`suggest_edits` tasks (01, 02, 03, 05, 06, 07, 08):** scoring is now span-based. `checks.must_include[i]` now lists
+acceptable replacement phrasings for reference change i (old values like `["They're going", "than"]` were
+substring checks and were replaced). `ho-suggest-edits-01` and `-03` now rely on the reference replacement only.
+
+**`must_say_unknown: ["Definition of done"]` added** to `ho-agents-md-02`, `-03`, `-06`, `-07` (the briefs do not say
+what "done" means). `seed-agents-md-02` also declares it.
+
+**Still fragile after the fixes (please look):** `ho-summarize-04` (a paraphrase like "big organizations" is still
+rejected), `ho-rewrite-01` (a human may accept "a month" for 30 days), `ho-suggest-edits-06` (the reference edit is
+optional and stylistic). These three are recorded as `ambiguous` in `known_good_variants.jsonl`.

@@ -49,7 +49,7 @@ Every script that writes training data must call `check_overlap.assert_no_overla
 | File | Purpose |
 |---|---|
 | `schema.py` | dataclasses for the six task inputs/outputs, `Example` record, JSONL reader/writer, `check_no_overlap` (train vs held-out) |
-| `scoring.py` | prompts, strict reply parsing, programmatic scoring, per-task summary |
+| `scoring.py` | prompts, strict reply parsing, programmatic scoring (rules in `docs/doclm/SCORING.md`), per-task summary |
 | `eval_runner.py` | runs a JSONL set against `/chat/completions`, writes `results/<label>.{md,json}`, `--freeze`, `--compare`, `--dry-run` |
 | `make_seed_data.py` | writes `data/seed.jsonl` (10 hand-written seeds, `split="seed"`) |
 | `check_overlap.py` | held-out leak guard: exact, normalized, 5-gram containment >= 0.40 |
