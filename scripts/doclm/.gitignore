@@ -1,2 +1,4 @@
 __pycache__/
 results/
+# the repo root ignores data/; docLM data files are source and must be tracked
+!data/
