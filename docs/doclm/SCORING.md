@@ -11,7 +11,7 @@ total = form_mean x product(content items) x product(penalty items)        # 0 i
 
 | Class | Items | Role |
 |---|---|---|
-| hard (0 -> total 0) | `parse`, `complete`, `changed`, `shorter_than_source`, `ids_exact`, `in_range`, `critical` | explicit constraints |
+| hard (0 -> total 0) | `parse`, `complete`, `changed`, `shorter_than_source`, `ids_exact`, `in_range`, `critical`, `no_real_change` | explicit constraints |
 | content (multiply) | `must_include`, `sections`, `score_closeness`, `recall`, `precision`, `no_false_positive` | right content, not just right shape |
 | penalty (multiply) | `must_not_include`, `within_limit`, `unknown_fields` | passing earns nothing, failing costs |
 | form (averaged) | everything else (`no_preamble`, `length_sane`, `rationale_len`, `grounded`, `has_reason`, `non_noop`, ...) | shape |
@@ -88,6 +88,18 @@ word adds nothing. No normalisation is applied before counting.
   is never spurious, in any wording. Anything elsewhere is still spurious. Used by `ho-suggest-edits-06` (a stylistic
   edit) and by `ho-suggest-edits-05` and `-08`, where change index 2 is a real but secondary punctuation error (comma
   splice before "please"; missing comma before "then") that the reference lists so a model fixing it is not penalised.
+- **Empty or no-op answers (`no_real_change`).** If the reference has at least one **required** (not optional) edit and
+  the reply has no change with `original != replacement` (an empty list, or only no-op changes), the item
+  `no_real_change` is 0 and the example scores 0. It is a hard item, emitted only on failure, so it never changes the
+  form mean. It does not apply when every expected edit is optional (`ho-suggest-edits-06`) or when the reference
+  needs no change (`ho-suggest-edits-04`, where any change already fails `no_false_positive`). It does **not** change
+  what "optional" means.
+- **Alternatives must not already occur in the original text.** An acceptable replacement (in `checks.must_include[i]`)
+  that, with its one word of context on each side, already appears in the unedited document would let a no-op count as
+  a fix. Audit new alternatives against the original text (`ho-suggest-edits-07` had `after that`, now removed; the
+  cost is that a valid replacement "after that" is no longer accepted there).
+  The audit uses the normaliser: an alternative that differs from the original only by a plural (`totals are wrong` vs
+  `total are wrong` in `ho-suggest-edits-05`) has the same tokens and cannot be added.
 - Known weakness: a harmless extra improvement outside the expected spans is counted as spurious.
 
 ## Invented content (`checks.must_say_unknown`, optional)
