@@ -46,6 +46,10 @@ Both apply to the text tasks that use phrase checks (rewrite, agents_md, archite
 `critical` are not also needed in `must_include`. Used so far by the five tasks reviewed in batch 4 (`ho-rewrite-07`,
 `-08`, `-09`, `ho-agents-md-01`, `-02`) and by the 15 tasks of batch 6 (`ho-agents-md-03` to `-08`,
 `ho-architecture-md-01` to `-08`, `ho-summarize-01`).
+Batch 5 adds the six rewrite tasks `ho-rewrite-01` to `-06`. Rewrite lessons: `critical` entries must list the
+verb-with-subject (`engineer restarted`, `steering committee delayed`) to catch a swapped actor or a passive rewrite;
+and `ho-rewrite-05` deliberately does **not** require the year (an existing known-good variant omits it), so a missing year
+is not caught (a few wrong years are, via `must_not_critical`).
 
 **Writing `critical` alternatives (lessons from batch 6):**
 - To catch a flipped or negated instruction, list the *positive* wording with its subject or verb phrase, so that a
@@ -71,6 +75,14 @@ Both apply to the text tasks that use phrase checks (rewrite, agents_md, archite
   ignored); "Done criteria" or "Definition-of-done" loses 0.25.
 - A hard gate makes a missing alternative cost the whole example, so an incomplete alternatives list is a bigger risk
   than before: review alternatives for fairness.
+
+## Forbidden-phrase gate (`checks.must_not_critical`)
+
+A list of phrases, each a string or a list of alternatives, matched like `must_include` (same normalisation). If **any**
+appears in the reply the item `must_not_critical` is 0 and the example scores 0 (hard item; not in the form mean; ignored
+by `ungated`). Unlike `must_not_include` (a multiplier diluted by 1/n per entry) it cannot be diluted. Use it for a
+specific wrong word that a correct answer would never contain (`utilize`, a wrong year). Remember the stemmer (`gets` =
+`get`) and that a negated mention is also a hit. Used by `ho-rewrite-03`, `-04`, `-05`.
 
 ## Gated and ungated totals (`ungated`, `mean_ungated`, `gated_zero`, `gated_zero_ids`)
 
@@ -161,7 +173,7 @@ fence at the end of the last file.
 
 ## Two-way tests
 
-`data/known_bad.jsonl` (60 outputs, must score <= 0.30) and `data/known_good_variants.jsonl` (81 variants, must
+`data/known_bad.jsonl` (60 outputs, must score <= 0.30) and `data/known_good_variants.jsonl` (93 variants, must
 score >= 0.80, except entries marked `ambiguous`, which are reported but not asserted; only `a month` for `30 days` is
-left ambiguous). Ten variants were written blind to the checks; the 30 added in batch 6 were written with the checks
-visible. See `tests/test_known_good.py`.
+left ambiguous). Ten variants were written blind to the checks; the 30 added in batch 6 and the 12 added in batch 5
+were written with the checks visible. See `tests/test_known_good.py`.

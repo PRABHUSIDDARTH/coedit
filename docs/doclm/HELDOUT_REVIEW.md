@@ -94,7 +94,9 @@ what "done" means). `seed-agents-md-02` also declares it.
 
 **Still fragile (please look):** `ho-rewrite-01` (above), and every check that lists one phrasing only.
 
-## Review batch 4 (draft lines 16-20): review mode, NOT approved, NOT committed
+## Review batch 4 (draft lines 16-20): review mode, merged via PR #5, not human-reviewed
+
+_Status (corrected to match git): merged to `main` via PR #5. Reviewed by the Claude agent in review mode; **not independently human-reviewed or approved**. No human sign-off is claimed._
 
 Tasks: `ho-rewrite-07`, `-08`, `-09`, `ho-agents-md-01`, `-02`. Branch `docllm-batch4-review`. Nothing frozen, no baseline, no model run.
 Only the `checks` field of these five lines was edited; inputs and references are untouched (compared field by field against the copy taken before the edits).
@@ -113,7 +115,9 @@ Replies called "probe" are ad-hoc replies written in a scratch directory outside
 **Not caught (measured with probes, still 1.000):** "at least seven business days", "do not process refunds within seven business days", "within seven business days before you send your return", "at least 10 minutes", "never sent it", "Luis approved it but we never sent it", "never run go build ./...", "never commit migrations", "put secrets in settings.py; do not use environment variables", "do not use pytest", invented done criteria on `ho-agents-md-01`.
 **Still below 1.000 for a correct answer (probes):** headings "Done criteria", "Definition-of-done", "## Done" (0.75 / 0.75 / 0.375) (heading variants left alone by the owner's decision). "Not given" now passes.
 
-## Review batch 7 (draft lines 36-50): review mode, NOT approved, NOT committed
+## Review batch 7 (draft lines 36-50): review mode, merged via PR #6, not human-reviewed
+
+_Status (corrected to match git): merged to `main` via PR #6. Reviewed by the Claude agent in review mode; **not independently human-reviewed or approved**. No human sign-off is claimed._
 Tasks: `ho-summarize-02` to `-08` and `ho-suggest-edits-01` to `-08`. Branch `docllm-batch7-review` (off `docllm-batch4-review`). Nothing frozen, no baseline, no model run.
 Only the `checks` field of these lines was edited (inputs and references compared field by field with the copy taken before the edits). Replies called "probe" are ad-hoc and live in a scratch directory outside the repo.
 
@@ -137,7 +141,9 @@ Probe results (current checks vs new): adds-Windows-7 flip, voted-against, booki
 - `ho-suggest-edits-05`: "totals are wrong" was **not** added. It normalises to the same tokens as the original "total are wrong" (the stemmer removes the plural), so it already "appears" in the original text; a real fix with that wording also fails the span test (probe 0.250, unchanged). Added instead (each audited: not in the original, no-op does not count as fixed): `total is incorrect`, `totals are incorrect`, `total is not correct`, `total is not right`, `totals are not correct`, `totals are not right` (probes 1.000). Tense variants (`total was wrong`) were not added. A no-op on the second edit plus the first fix scores 0.188.
 - Verification after these edits: 66 model-free tests pass, `ruff` clean, all 50 golds 1.000. `ho-suggest-edits-06` untouched.
 
-## Review batch 6 (draft lines 21-35): review mode, NOT approved, NOT committed
+## Review batch 6 (draft lines 21-35): review mode, merged via PR #7, not human-reviewed
+
+_Status (corrected to match git): merged to `main` via PR #7. Reviewed by the Claude agent in review mode; **not independently human-reviewed or approved**. No human sign-off is claimed._
 Tasks: `ho-agents-md-03` to `-08`, `ho-architecture-md-01` to `-08`, `ho-summarize-01`. Branch `docllm-batch6-review` (off `main`). Nothing frozen, no baseline, no model run.
 Only the `checks` field of these 15 lines was edited (compared field by field against `git show HEAD`: no other field differs on any of the 50 lines). Replies called "probe" are ad-hoc and live in a scratch directory outside the repo.
 
@@ -164,3 +170,34 @@ Only the `checks` field of these 15 lines was edited (compared field by field ag
 **Scorer change (group B, approved by the owner and applied):** a per-task `ungated` total that ignores `critical` and `no_real_change`, with `mean_ungated` and `gated_zero` in the summary and table, `gated_zero_ids` and a per-item `ungated` in the JSON, and the ids listed under the table. Changes in `scoring.py` and `eval_runner.py`; new `tests/test_ungated.py` (6 tests). Documented in `SCORING.md`. `test_doclm.py` has no assertion on the `render_table` header and `render_compare` is unchanged; it was read, not run.
 
 **Verification after the last edit:** 66 model-free tests pass (the same eight test files as before; `test_doclm`, `test_freeze` and `test_serve_check` not run), `ruff check` and `ruff format --check` clean, `check_overlap --train seed.jsonl` OK, all 50 golds 1.000, all 81 `known_good_variants` at 1.000 except the one `ambiguous` entry, all 60 `known_bad` at or below 0.30 (58 at 0.000; two critique `plausible_wrong` entries at 0.200 and 0.067, unchanged and not part of this batch). The freeze decision is the owner's.
+
+## Review batch 5 (draft lines 1-15): review mode, PR open (not merged), not human-reviewed
+
+_Status: committed on `docllm-batch5-review` with a pull request to `main` that is not merged. Reviewed by the Claude agent in review mode; **not independently human-reviewed or approved**. The owner approved the year decision and the `must_not_critical` scorer change (below); that is not a sign-off on the whole batch._
+Tasks: `ho-critique-01` to `-09` and `ho-rewrite-01` to `-06` (confirmed against the local file). Branch `docllm-batch5-review` (off `main`, which already contains batches 4, 6 and 7). Nothing frozen, no baseline, no model run.
+Only the `checks` field of `ho-rewrite-01` to `-06` was edited (compared field by field against `git show HEAD`: no other field differs on any of the 50 lines). The 9 critique lines are untouched. Replies called "probe" are ad-hoc and live in a scratch directory outside the repo.
+
+**Critique tasks (schema, gold, known entries, overlap only; no probes, no checks added):** schema OK; all 9 golds 1.000; max 5-gram containment 0.000 against every other held-out task and `seed.jsonl` (`check_overlap.py --train seed.jsonl` OK). Existing `known_bad` entries exist for `ho-critique-01` and `-05` only (5 each); none scores above 0.30 (highest: `-01` `plausible_wrong` 0.200, `-05` `plausible_wrong` 0.067). Existing `known_good_variants`: `-01`, `-05`, `-06`, `-08`, `-09` (0.933 each). Reference scores (the owner's judgment, `score_closeness` measures distance to them; rubric closeness cannot be gated):
+`-01` clarity 2 / concision 1 / evidence 0; `-02` 5/5/5; `-03` 1/1/0; `-04` 5/4/5; `-05` repro_steps 0 / expected_vs_actual 1 / environment 0; `-06` 4/5/3; `-07` ask_is_clear 1 / deadline 0 / tone 3; `-08` 5/3/4; `-09` 3/3/1.
+
+**Rewrite tasks, before the edits (77 BAD / 46 GOOD probes, 6 tasks):** 61 of 77 BAD probes scored 0.5 or more and 46 scored 1.000 (wrong month/year, flipped meaning, swapped actor, dropped cause, wrong team, "$412 each", passive kept without the listed phrase, jargon kept). 9 of the 46 GOOD probes were below 1.000 (false strictness: `renews`, `2:10 am`, `37 of our customers`, `3 January (Friday)` = 0, `Jan 3` = 0, `Fri 3 January` = 0).
+
+**Checks changed (group A only):** the facts moved from `must_include` to `critical` with alternatives; `must_not_include` is unchanged on all six tasks.
+- `ho-rewrite-01`: `30 days` + direction (`30 days before/ahead/in advance/or more before/notice`, `30 or more days before`), `renewal`/`renews`, written (`written/in writing/writing/write to us/email/letter`).
+- `-02`: `02:10`/`2:10`, `on-call engineer`, `engineer restarted/rebooted/...` (so a swapped actor or `got restarted by` fails), `monitoring`, an after/once/when/because/so word, `disk full` family, `server`.
+- `-03`: `14 departments`, `dashboard`, `unusual/odd/strange/...`, a plain finding verb (so `hide`, `normal spending`, `anomalous`/`identification` fail).
+- `-04`: `37 customers/clients`, `$412`, `march`, `overcharged/too much` (so `undercharged` fails), `total/in total/altogether/...` (so `$412 each` fails), `billing team made/overcharged/...` (swapped actor and `got overcharged by` passives fail).
+- `-05`: weekday + date forms (`Friday 3 January`, `3 January (Friday)`, `Fri 3 Jan`, `Jan 3`, ...), `closed/shut/not open/...`, `holiday`. **The year is not required** (see below).
+- `-06`: `9 June`, `steering committee delayed/postponed/pushed/decided to ...`, `security review/audit/...`, an after/once/following word.
+Alternatives already present in the original text (audited with the normaliser): only the fact words the gold itself uses (`renewal`, `in writing`, `02:10`, `on-call engineer`, `monitoring`, `after`, `server`, `14 departments`, `dashboard`, `37 customers`, `$412`, `march`, `overcharged`, `total`, `friday 3 january`, `closed`, `holiday`, `9 June`, `security review`). They cannot be removed without breaking the 1.000 gold (same departure as batch 6). `30 days prior to the renewal` was **not** added (it is in the original), only `30 days prior to your renewal` / `prior to renewal`. A verbatim copy, a copy plus a period or newline and a lowercased copy all score 0.000 on all six tasks.
+
+**Before / after (current checks vs new checks, 123 probes):** GOOD at 1.000: 37 of 46 before, 46 of 46 after. BAD scoring 1.000: 46 before, 13 after. BAD scoring 0.5 or more: 61 before, 15 after. BORDER: `-01` "tell us at least 30 days before ..." (drops "written") 1.000 -> 0.000 by design; `-02` "after monitoring found the disk full" stays 1.000. Many GOOD gains come from alternatives added after seeing the failing probe, so they are not independent evidence.
+
+**Known good variants:** 12 new (2 per task, worded differently from the gold and from the probes) in `known_good_variants.jsonl`, **written with the checks visible, so not blind**. All 12 scored 1.000 on the first run, no alternative had to be added for them. A further 18 fresh GOOD probes written after the new checks: first run 3 scored 0.000 on the gate (ungated 1.000): `-01` "30 or more days before", `-02` "reported a full disk, and the on-call engineer ...", `-04` "The billing team on our side made mistakes ...". Alternatives were added for the first two; the third (unnatural wording) was left, so 1 of 18 (about 6%) still false-zeros. Unseen wordings will probably hit more, so read the `gated_zero_ids` list after the baseline.
+
+**Not caught (measured, still 1.000):** `-01` actor changed ("We will send you a written request ...") and an invented fee; `-02` invented "old log files"; `-03` jargon kept as a different word ("utilize", "utilising": 1.000) and an invented saving; `-04` "got overcharged" passive, an invented refund; `-05` a **wrong year** (2026), a **dropped year**, jargon kept ("Kindly note ... said date ... owing to"), invented hours, "will not reopen". `-03` "facilitates spotting" scores 0.667 (existing `must_not_include`), `-05` "Please be advised" 0.500 (existing).
+**Year on `ho-rewrite-05`:** requiring `2025` would zero the existing known-good variant "Friday, January 3rd" (no year, from the smoke run). That variant is the owner's, so the year was left optional. The owner decides.
+
+**Scorer change (owner-approved, applied to `scoring.py` and `schema.py`):** new hard gate `checks.must_not_critical` (phrases or alternative lists that must not appear; any hit gives 0; ignored by `ungated` so a false zero stays visible; not part of the form mean). Used on `ho-rewrite-03` (`utilize`, `utilise`, `utilizing`, `utilising`), `ho-rewrite-04` (`got overcharged`, `get overcharged`, `gets overcharged`) and `ho-rewrite-05` (the wrong years `2023`, `2024`, `2026`, `2027`; the correct year is not required, as decided). New `tests/test_must_not_critical.py` (6 tests). Effect: the probes "utilize kept", "utilising kept", "got overcharged" and "wrong year 2026" went 1.000 -> 0.000; no other probe changed and every GOOD probe stays 1.000. After this, 9 of 77 BAD probes still score 1.000 (11 score 0.5 or more).
+
+**Verification after the last edit:** 78 model-free tests pass (every `tests/test_*.py` except `test_doclm`, `test_freeze`, `test_serve_check`); `ruff check` and `ruff format --check` clean (ruff 0.17.5 from `backend/.venv/bin/ruff`, run inside `scripts/doclm` so its `ruff.toml` applies); `check_overlap --train seed.jsonl` OK; all 50 golds 1.000; all 93 `known_good_variants` at 1.000 except the nine critique ones at 0.933 and the one `ambiguous` entry (`good-ho-rewrite-01-blind2`, "a month before it renews", 0.000; it is the only `ambiguous` entry and `test_known_good.py` skips it by design); all 60 `known_bad` at or below 0.30. The freeze decision is the owner's.
