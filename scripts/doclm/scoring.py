@@ -120,7 +120,9 @@ def parse_reply(task: str, text: str) -> Any:
 # Item classes. `total` = form_mean x product(content) x forbidden-phrase factor, so structure
 # alone earns nothing: a reply with the right shape but no right content scores near 0.
 # HARD items are explicit constraints; failing any of them zeroes the example.
-HARD = frozenset({"parse", "complete", "changed", "shorter_than_source", "ids_exact", "in_range"})
+HARD = frozenset(
+    {"parse", "complete", "changed", "shorter_than_source", "ids_exact", "in_range", "critical"}
+)
 CONTENT = frozenset(
     {
         "must_include",
@@ -156,7 +158,11 @@ class Score:
     def total(self) -> float:
         if not self.items or any(self.items.get(k, 1.0) == 0.0 for k in HARD):
             return 0.0
-        form = [v for k, v in self.items.items() if k not in CONTENT and k not in PENALTIES]
+        form = [
+            v
+            for k, v in self.items.items()
+            if k not in CONTENT and k not in PENALTIES and k != "critical"
+        ]
         total = sum(form) / len(form) if form else 1.0
         for k in CONTENT:
             if k in self.items:
@@ -377,7 +383,19 @@ def _alts(entry: str | list[str]) -> list[str]:
     return [entry] if isinstance(entry, str) else list(entry)
 
 
-UNKNOWN_MARKERS = ("unknown", "not specified", "not provided", "not stated", "n/a", "tbd")
+UNKNOWN_MARKERS = (
+    "unknown",
+    "not specified",
+    "not provided",
+    "not stated",
+    "n/a",
+    "tbd",
+    "not defined",
+    "not mentioned",
+    "unspecified",
+    "to be determined",
+    "not given",
+)
 
 
 def _section_body(md: str, field: str) -> str | None:
@@ -420,6 +438,13 @@ def _phrases(text: str, ex: Example) -> dict[str, float]:
         out["must_include"] = sum(
             any(contains_phrase(text, a) for a in _alts(e)) for e in inc
         ) / len(inc)
+    crit = ex.checks.get("critical", [])  # facts that must all be present, else the example is 0
+    raw = ex.checks.get("must_include_raw", [])  # command strings: raw, case-folded substring
+    if crit or raw:
+        flat = _collapse(text)
+        ok_c = all(any(contains_phrase(text, a) for a in _alts(e)) for e in crit)
+        ok_r = all(_collapse(r) in flat for r in raw)
+        out["critical"] = float(ok_c and ok_r)
     if exc:
         out["must_not_include"] = 1.0 - sum(contains_phrase(text, p) for p in exc) / len(exc)
     return out
