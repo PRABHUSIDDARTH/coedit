@@ -11,13 +11,13 @@ Anything marked **(unverified)** is from memory or estimation, not checked in th
 | OS | Native Ubuntu 24.04 (not WSL2, not Windows); `nvcc` not installed |
 | RAM / CPU | 31 GiB, 8 GiB swap, 24 threads |
 | Python / Ollama | 3.12.3 / 0.24.0 (one model present: `llama3.1:8b-instruct-q4_K_M`) |
-| **Disk** | `/` is **100% full: 476 MB free of 937 GB** |
+| **Disk** | `/` had **476 MB free of 937 GB** when first measured (2026-11-16); re-measured 2026-11-17: **578 GB free of 937 GB (36% used)** |
 
-**Blocker:** training, merging and GGUF export need roughly 40-60 GB free **(estimate)**. Free disk first. The GPU is usable, so the training plan stays; the eval and data work below needs almost no space. RTX 50-series (Blackwell) needs a recent PyTorch/bitsandbytes build **(unverified)**; confirm with a 1-minute CUDA smoke test before anything else.
+**Disk blocker cleared:** training, merging and GGUF export need roughly 40-60 GB free **(estimate)**; 578 GB are free (2026-11-17). The GPU is usable, so the training plan stays. RTX 50-series (Blackwell) needs a recent PyTorch/bitsandbytes build **(unverified)**; confirm with a 1-minute CUDA smoke test before anything else.
 
 ## 1. Goal and honest claim
 
-docLM is a small local model tuned for Coedit's six document tasks. The only claim we will make: *on a frozen, human-written, held-out set of 50 tasks, docLM scores higher than its own untuned base model.* No claim of matching large hosted models.
+docLM is a small local model tuned for Coedit's six document tasks. The only claim we will make: *on a frozen held-out set of 50 tasks (`heldout.v1.jsonl`), docLM scores higher than its own untuned base model.* That set was drafted by Claude agents, reviewed only by Claude agents, and has **not been reviewed by a human**; until a human reviews it, state the result as "on a frozen, Claude-drafted held-out set", never as a human-written benchmark. No claim of matching large hosted models.
 
 ## 2. Task types
 
@@ -59,13 +59,17 @@ Candidates (ids from memory, **verify on the hub before use**; newer open models
 
 | Option | Licence/terms | Volume | Risk |
 |---|---|---|---|
-| Hand-written seeds by you | yours | 100-300 | slow; cheapest and cleanest; **all 50 held-out tasks must be this** |
+| Hand-written seeds by you | yours | 100-300 | slow; cheapest and cleanest; **the 50 held-out tasks are NOT this**: they were drafted by Claude agents (section 6) |
 | Public-domain text (e.g. Project Gutenberg) as rewrite/summarize/critique sources | public domain (verify per work) | thousands of passages | needs labels; style is old |
 | Permissive public datasets | check each dataset card; accept MIT/Apache/CC0/CC-BY only | unknown | licence drift, hidden synthetic-LLM content **(unverified)**; share-alike (CC-BY-SA) is unclear for weights, so avoid |
 | READMEs/AGENTS.md from MIT/Apache/BSD repos | per-repo licence | hundreds | filter per repo; needs a download step later (your approval) |
 | Synthetic from a local open-weights model | model licence must allow output use for training (Apache-2.0 likely; Llama 3.1 terms **unverified**) | 1-3k | teacher bias, noisy labels, circular gains if teacher = base family; run locally via Ollama |
 
 Target for a first run: ~150 hand-written + ~1,000 filtered synthetic, all with `source` provenance recorded per line.
+
+**`scripts/doclm/data/seed.jsonl` (10 examples) is a pipeline test of unverified authorship and is NOT to be used for training.**
+
+**Preferred direction (recorded 2026-11-17, pending the owner's approval of sources):** rejection-sampled generation from the MIT-licensed base model (Phi-4-mini-instruct) with programmatic filters, rather than using another model's outputs. Nothing is approved or generated yet.
 
 ## 5. Training approach
 
@@ -76,7 +80,7 @@ Target for a first run: ~150 hand-written + ~1,000 filtered synthetic, all with 
 
 ## 6. Evaluation
 
-- **Held-out:** 50 hand-written tasks (9 critique, 9 rewrite, 8 agents_md, 8 architecture_md, 8 summarize, 8 suggest_edits), each with a human reference. Freeze with `eval_runner.py --freeze`; the runner refuses a changed file. `check_no_overlap` blocks id or input overlap with training data.
+- **Held-out:** 50 tasks (9 critique, 9 rewrite, 8 agents_md, 8 architecture_md, 8 summarize, 8 suggest_edits), each with a reference, **drafted by Claude agents and reviewed only by Claude agents; no human review yet**. Frozen as `scripts/doclm/data/heldout.v1.jsonl` (sha256 `2e010fe595a79f4fa27a6ed932b0347c139e5f1258956126f3cef1858cd3e6da`) with `eval_runner.py --freeze`; the runner refuses a changed file. `check_no_overlap` blocks id or input overlap with training data.
 - **Scoring (programmatic, `scoring.py`):** JSON validity (strict: no code fences or prose), rubric-id match and range, closeness to human scores, section coverage, length limits, verbatim-grounded edits, required/forbidden phrases. These are structural checks, **not writing quality**; also hand-review 10 outputs per model.
 - **Baseline first:** run the untuned base through the same endpoint (Ollama or any OpenAI-compatible server) **before any training**; save `results/base.json`.
 - **Report:** `--compare base.json doclm.json` prints a per-task table (n, base, docLM, delta, JSON-valid rate). With 8-9 items per task, small deltas are noise.
@@ -91,12 +95,12 @@ In Coedit: Council seat with preset **Ollama (local)** (`http://host.docker.inte
 
 ## 8. Risks and unknowns (ranked)
 
-1. **Disk full (476 MB).** Nothing downloads, trains or exports until fixed.
+1. **Disk space (cleared).** 476 MB free on 2026-11-16, 578 GB free on 2026-11-17; keep it above roughly 60 GB for training and export.
 2. Training data licensing and provenance: Claude-written repo docs must stay out.
-3. Held-out set does not exist yet; 50 hand-written tasks are the real effort (hours).
+3. The held-out set exists and is frozen (`heldout.v1.jsonl`, sha256 `2e010fe595a79f4fa27a6ed932b0347c139e5f1258956126f3cef1858cd3e6da`), but it was drafted and reviewed only by Claude agents and has had no human review; a human review of the 50 tasks is the real effort left (hours).
 4. Blackwell GPU software support (PyTorch, bitsandbytes) unverified.
 5. Gains may not appear: base may already do well, scorer is structural only, n is small.
 6. Model ids, sizes and licences above are from memory.
 7. Council use: Ollama reachability from Docker; model price entry.
 
-**You must provide or decide:** free a disk of 60+ GB or name another one; confirm whether the repo's AGENTS/ARCHITECTURE files were Claude-written; approve downloading a base model and its licence; pick the base candidate; write (or approve time for) the 50 held-out tasks; say whether any hosted-model terms permit training use (default: no).
+**You must provide or decide:** confirm whether the repo's AGENTS/ARCHITECTURE files were Claude-written; approve downloading a base model and its licence; pick the base candidate; review the 50 frozen held-out tasks yourself (or approve time for it), since they were drafted by Claude agents and are not human-reviewed; say whether any hosted-model terms permit training use (default: no).
