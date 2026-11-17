@@ -163,9 +163,8 @@ class Score:
     fenced: bool = False  # reply wrapped in one outer ``` fence; recorded, never changes the score
     note: str = ""
 
-    @property
-    def total(self) -> float:
-        if not self.items or any(self.items.get(k, 1.0) == 0.0 for k in HARD):
+    def _total(self, gates: frozenset[str]) -> float:
+        if not self.items or any(self.items.get(k, 1.0) == 0.0 for k in gates):
             return 0.0
         form = [
             v
@@ -179,6 +178,18 @@ class Score:
         for k in PENALTIES:
             total *= self.items.get(k, 1.0)
         return total
+
+    @property
+    def total(self) -> float:
+        """The gated score: any hard item at 0 (including critical, no_real_change) gives 0."""
+        return self._total(HARD)
+
+    @property
+    def ungated(self) -> float:
+        """Same score, but ignoring the `critical` and `no_real_change` gates (every other hard
+        item still zeroes it). Diagnostic only: ungated - total > 0 means a gate fired, so a
+        false zero can be told apart from a genuinely wrong answer. Never used for gating."""
+        return self._total(HARD - {"critical", "no_real_change"})
 
 
 def _complete(text: str) -> float:
@@ -554,6 +565,8 @@ def summarize_scores(scores: list[Score]) -> dict[str, dict[str, Any]]:
         row: dict[str, Any] = {
             "n": len(ss),
             "mean": sum(x.total for x in ss) / len(ss),
+            "mean_ungated": sum(x.ungated for x in ss) / len(ss),
+            "gated_zero": sum(x.total == 0.0 < x.ungated for x in ss),
             "fenced_rate": sum(x.fenced for x in ss) / len(ss),
         }
         if task in STRICT_JSON_TASKS:
