@@ -44,7 +44,20 @@ not be wrong, a task may declare:
 
 Both apply to the text tasks that use phrase checks (rewrite, agents_md, architecture_md, summarize). Entries in
 `critical` are not also needed in `must_include`. Used so far by the five tasks reviewed in batch 4 (`ho-rewrite-07`,
-`-08`, `-09`, `ho-agents-md-01`, `-02`).
+`-08`, `-09`, `ho-agents-md-01`, `-02`) and by the 15 tasks of batch 6 (`ho-agents-md-03` to `-08`,
+`ho-architecture-md-01` to `-08`, `ho-summarize-01`).
+
+**Writing `critical` alternatives (lessons from batch 6):**
+- To catch a flipped or negated instruction, list the *positive* wording with its subject or verb phrase, so that a
+  negation inserted in the middle breaks the match: `never run terraform apply locally`, `handlers need table-driven
+  tests`, `is wrapped in try/except`. A bare `use sticky sessions` also matches `do not use sticky sessions`.
+- The stemmer only strips plurals, but that creates collisions: `uses` = `use`, `overwrites` = `overwrite`,
+  `clobbers` = `clobber`, `backs` = `back`. An alternative such as `uses sticky sessions` therefore matches
+  `do not use sticky sessions`, and `overwrites` matches `never overwrite each other`. Check each new alternative
+  against a negated probe.
+- A phrase that is also in the brief (for example the command itself) must be accepted, so verbatim input copies are
+  not stopped by `critical`; they are stopped by the section, `shorter_than_source` and word-limit items (all 15
+  batch-6 verbatim copies score 0.000).
 
 **Known limits of phrase checks (all of the above):**
 - **Negation and "at least" flips are not caught.** "Refunds take at least seven business days", "we do not process
@@ -58,6 +71,24 @@ Both apply to the text tasks that use phrase checks (rewrite, agents_md, archite
   ignored); "Done criteria" or "Definition-of-done" loses 0.25.
 - A hard gate makes a missing alternative cost the whole example, so an incomplete alternatives list is a bigger risk
   than before: review alternatives for fairness.
+
+## Gated and ungated totals (`ungated`, `mean_ungated`, `gated_zero`, `gated_zero_ids`)
+
+`total` is the gated score described above. Every `Score` also has `ungated`: the same calculation, but the `critical`
+and `no_real_change` gates are ignored (every other hard item, such as `parse`, `complete` or `shorter_than_source`,
+still zeroes it). It is a diagnostic only and never gates anything.
+
+- `ungated >= total` always. `total == 0 < ungated` means a gate, not the answer's overall shape, produced the zero:
+  either a genuinely wrong fact or a false zero from an alternatives list that missed a correct wording.
+- Per task type, `summarize_scores` and the result JSON report `mean` (gated), `mean_ungated` and `gated_zero` (how many
+  tasks were zeroed only by a gate). The `.md` table shows `ungated mean` and `gated to 0` and lists the affected ids
+  under the table. The result JSON has `gated_zero_ids` and a per-item `ungated`.
+- Use it after the baseline: read the replies for every id in `gated_zero_ids` before trusting the gated mean.
+
+**Measured false-zero rate (batch 6):** on one fresh set of 24 correct-looking paraphrases (21 GOOD, 3 BORDER) scored
+after the first round of `critical` alternatives, 5 of the 21 GOOD ones scored 0 on the gate, about 1 in 4. Alternatives
+were then added for those five. Unseen wordings will probably still hit false zeros at a similar order of magnitude, so
+do not read the gated mean as a clean measure of correctness.
 
 ## Word limit (summarize)
 
@@ -130,6 +161,7 @@ fence at the end of the last file.
 
 ## Two-way tests
 
-`data/known_bad.jsonl` (60 outputs, must score <= 0.30) and `data/known_good_variants.jsonl` (36 variants, must
+`data/known_bad.jsonl` (60 outputs, must score <= 0.30) and `data/known_good_variants.jsonl` (81 variants, must
 score >= 0.80, except entries marked `ambiguous`, which are reported but not asserted; only `a month` for `30 days` is
-left ambiguous). Ten variants were written blind to the checks. See `tests/test_known_good.py`.
+left ambiguous). Ten variants were written blind to the checks; the 30 added in batch 6 were written with the checks
+visible. See `tests/test_known_good.py`.

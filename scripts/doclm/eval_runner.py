@@ -160,8 +160,8 @@ def render_table(label: str, summary: dict[str, dict[str, Any]], note: str = "")
     if note:
         lines += [note, ""]
     lines += [
-        "| task | n | mean score (0-1) | JSON-valid rate (strict) | JSON-valid if unfenced | fenced |",
-        "|---|---|---|---|---|---|",
+        "| task | n | mean score (0-1) | ungated mean | gated to 0 | JSON-valid rate (strict) | JSON-valid if unfenced | fenced |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for t in TASKS:
         if t in summary:
@@ -169,7 +169,8 @@ def render_table(label: str, summary: dict[str, dict[str, Any]], note: str = "")
             jv = f"{r['json_valid_rate']:.0%}" if "json_valid_rate" in r else "n/a"
             jl = f"{r['json_valid_lenient_rate']:.0%}" if "json_valid_lenient_rate" in r else "n/a"
             lines.append(
-                f"| {t} | {r['n']} | {r['mean']:.3f} | {jv} | {jl} | {r.get('fenced_rate', 0):.0%} |"
+                f"| {t} | {r['n']} | {r['mean']:.3f} | {r.get('mean_ungated', r['mean']):.3f} "
+                f"| {r.get('gated_zero', 0)} | {jv} | {jl} | {r.get('fenced_rate', 0):.0%} |"
             )
     return "\n".join(lines) + "\n"
 
@@ -247,11 +248,13 @@ def run(args: argparse.Namespace) -> int:
         "data_sha256": sha256_file(data),
         "errors": errors,
         "summary": summary,
+        "gated_zero_ids": [s.id for s in scores if s.total == 0.0 < s.ungated],
         "items": [
             {
                 "id": s.id,
                 "task": s.task,
                 "total": s.total,
+                "ungated": s.ungated,
                 "json_valid": s.json_valid,
                 "json_valid_lenient": s.json_valid_lenient,
                 "fenced": s.fenced,
@@ -263,6 +266,9 @@ def run(args: argparse.Namespace) -> int:
     }
     (out_dir / f"{label}.json").write_text(json.dumps(result, indent=1), encoding="utf-8")
     table = render_table(label, summary, note)
+    gz = [s.id for s in scores if s.total == 0.0 < s.ungated]
+    if gz:
+        table += f"\nTasks zeroed only by a gate (total 0, ungated > 0): {', '.join(gz)}\n"
     if errors:
         table += f"\nRequest errors (counts by status label): {json.dumps(errors)}\n"
     (out_dir / f"{label}.md").write_text(table, encoding="utf-8")
