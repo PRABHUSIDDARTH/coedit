@@ -61,6 +61,22 @@ def check_weights(path: str) -> list[str]:
     return problems
 
 
+def generation_kwargs(req: dict) -> dict:
+    """Decoding settings for one request. Greedy unless the request asks for sampling.
+
+    A missing, zero or negative `temperature` (the evaluation runner always sends 0) gives exactly
+    the original greedy decoding, so scoring is unchanged. `temperature` > 0 turns sampling on
+    (data generation only); `top_p` defaults to 1.0. A `seed` is applied by the handler.
+    """
+    try:
+        t = float(req.get("temperature") or 0)
+    except (TypeError, ValueError):
+        t = 0.0
+    if t <= 0:
+        return {"do_sample": False}
+    return {"do_sample": True, "temperature": t, "top_p": float(req.get("top_p") or 1.0)}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--model-path", required=True)
@@ -137,8 +153,11 @@ def main() -> int:
             enc = tok.apply_chat_template(
                 req["messages"], add_generation_prompt=True, return_tensors="pt", return_dict=True
             ).to("cuda")
+            gen = generation_kwargs(req)
             with lock, torch.inference_mode():
-                out = model.generate(**enc, max_new_tokens=max_new, do_sample=False)
+                if gen["do_sample"] and req.get("seed") is not None:
+                    torch.manual_seed(int(req["seed"]))  # best effort; CUDA is not bit-exact
+                out = model.generate(**enc, max_new_tokens=max_new, **gen)
             n_in = enc["input_ids"].shape[1]
             text = tok.decode(out[0][n_in:], skip_special_tokens=True)
             body = json.dumps(
