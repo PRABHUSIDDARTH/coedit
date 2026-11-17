@@ -179,9 +179,7 @@ class OrganizationAlternativeTests(unittest.TestCase):
             "a large organization",
             "large companies",
         ):
-            self.assertEqual(
-                score_example(ex, base.format(phrase)).items["must_include"], 1.0, phrase
-            )
+            self.assertEqual(score_example(ex, base.format(phrase)).items["critical"], 1.0, phrase)
         self.assertLess(score_example(ex, base.format("some firms")).total, 1.0)
         rw = HELD["ho-rewrite-01"]
         self.assertEqual(

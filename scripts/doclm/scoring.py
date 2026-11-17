@@ -121,7 +121,16 @@ def parse_reply(task: str, text: str) -> Any:
 # alone earns nothing: a reply with the right shape but no right content scores near 0.
 # HARD items are explicit constraints; failing any of them zeroes the example.
 HARD = frozenset(
-    {"parse", "complete", "changed", "shorter_than_source", "ids_exact", "in_range", "critical"}
+    {
+        "parse",
+        "complete",
+        "changed",
+        "shorter_than_source",
+        "ids_exact",
+        "in_range",
+        "critical",
+        "no_real_change",
+    }
 )
 CONTENT = frozenset(
     {
@@ -161,7 +170,7 @@ class Score:
         form = [
             v
             for k, v in self.items.items()
-            if k not in CONTENT and k not in PENALTIES and k != "critical"
+            if k not in CONTENT and k not in PENALTIES and k not in ("critical", "no_real_change")
         ]
         total = sum(form) / len(form) if form else 1.0
         for k in CONTENT:
@@ -525,6 +534,13 @@ def score_example(ex: Example, reply: str) -> Score:
         expected = EditsOutput.from_dict(ex.reference).changes if ex.reference is not None else None
         if expected is not None:
             s.items.update(_score_edit_spans(ex, doc, out.changes, spans, expected))
+            # An empty or no-op answer (every change has original == replacement) cannot earn credit
+            # for a task whose reference has at least one REQUIRED edit. Emitted only on failure, so
+            # it never dilutes the form mean.
+            optional = set(ex.checks.get("optional_edits", []))
+            required = [i for i in range(len(expected)) if i not in optional]
+            if required and not any(c.original != c.replacement for c in out.changes):
+                s.items["no_real_change"] = 0.0
     return s
 
 

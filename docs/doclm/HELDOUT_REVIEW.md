@@ -112,3 +112,27 @@ Replies called "probe" are ad-hoc replies written in a scratch directory outside
 
 **Not caught (measured with probes, still 1.000):** "at least seven business days", "do not process refunds within seven business days", "within seven business days before you send your return", "at least 10 minutes", "never sent it", "Luis approved it but we never sent it", "never run go build ./...", "never commit migrations", "put secrets in settings.py; do not use environment variables", "do not use pytest", invented done criteria on `ho-agents-md-01`.
 **Still below 1.000 for a correct answer (probes):** headings "Done criteria", "Definition-of-done", "## Done" (0.75 / 0.75 / 0.375) (heading variants left alone by the owner's decision). "Not given" now passes.
+
+## Review batch 7 (draft lines 36-50): review mode, NOT approved, NOT committed
+Tasks: `ho-summarize-02` to `-08` and `ho-suggest-edits-01` to `-08`. Branch `docllm-batch7-review` (off `docllm-batch4-review`). Nothing frozen, no baseline, no model run.
+Only the `checks` field of these lines was edited (inputs and references compared field by field with the copy taken before the edits). Replies called "probe" are ad-hoc and live in a scratch directory outside the repo.
+
+**What was run:**
+- All 50 golds score 1.000 after the last edit; `check_overlap` numbers for the 15 tasks: max 5-gram containment 0.000 against the other held-out tasks and against `seed.jsonl`.
+- Existing entries: `known_bad` covers only `ho-summarize-05`, `ho-suggest-edits-01` and `-04` (all 0.000); `known_good_variants` has 16 entries across 13 of the 15 tasks (all 1.000).
+- 66 model-free tests (without `test_doclm`, `test_freeze`, `test_serve_check`) pass; `ruff` clean.
+
+**Scorer change approved by the owner (`scoring.py`):** `no_real_change` (hard item): an empty reply or one whose changes all have `original == replacement` scores 0 when the reference has at least one required edit. New `tests/test_no_real_change.py`. It does not apply to `ho-suggest-edits-06` (its only edit is optional); the meaning of "optional" is unchanged and `-06` is untouched.
+
+**Audit, suggest_edits alternatives that already appear in the original text:** all 8 tasks audited (every reference replacement and every `must_include` alternative, tested as a no-op). One hit: `ho-suggest-edits-07`, alternative `after that` (also in the original span), which made a no-op count as a fix (no-op 0.750). Removed. Cost: a valid replacement "after that" now scores 0.000 on `-07` (was 1.000). The other 7 tasks: none.
+
+**Checks changed:** `ho-suggest-edits-07` (above). `ho-summarize-02` to `-08`: facts moved to `critical` with alternatives, including the direction of the claim where a probe showed a flip scored 1.000 (Windows 7 dropped, vote in favour, bookings carry over, "twice as likely", cause = failed transformer, 14 to 6 minutes and 72 to 90 percent, half price after 6 pm, 81 percent tied to keyword rules).
+Probe results (current checks vs new): adds-Windows-7 flip, voted-against, bookings cancelled, half as likely, storm cause, setup 6 to 14, completion reversed, half price before 6 pm, roles swapped 88/81 all 1.000 or 0.667 before and 0.000 after; all 18 GOOD summarize probes stay 1.000.
+
+**Not changed / still weak (measured):** suggest_edits tasks 01, 02, 03, 05, 08: fixing only one of two required errors scores 0.500; a wrong extra edit costs only 1/n (`-08` spurious "12 to 8 characters" 0.667; `-01` spurious database to databases 0.500); `-05` "totals are wrong" (a reasonable alternative) scores 0.250; `-06` empty answer 1.000 and no-op 0.750 (owner decision pending). Summarize: the claim-direction alternatives are long lists and a correct answer worded differently will fail (hard gate); `ho-summarize-01` was not part of this batch.
+
+**Batch 7 follow-up (owner-approved):**
+- `git fetch` + `git merge origin/main`: already up to date (`origin/main` 93fca17 was already an ancestor). This branch is main plus the batch 4 commit `b0da161` (PR #5, not merged) plus the batch 7 changes.
+- `known_good_variants.jsonl`: 14 new correct summaries (2 for each of `ho-summarize-02` to `-08`, worded differently from the gold and the earlier probes, within the word limit; written with the checks visible, so not blind) plus 1 for `ho-suggest-edits-05`. All 15 score 1.000. Three of the 14 failed first (hard gate): `-02` "Support for Windows 7 is dropped", `-04` "large employers", `-08` "keyword matching managed 81 percent". Fixed with alternatives (12 for `-02` direction, 10 for `-04` size, 15 for `-08` baseline wording). Earlier BAD probes still score 0 and earlier GOOD probes still 1.000.
+- `ho-suggest-edits-05`: "totals are wrong" was **not** added. It normalises to the same tokens as the original "total are wrong" (the stemmer removes the plural), so it already "appears" in the original text; a real fix with that wording also fails the span test (probe 0.250, unchanged). Added instead (each audited: not in the original, no-op does not count as fixed): `total is incorrect`, `totals are incorrect`, `total is not correct`, `total is not right`, `totals are not correct`, `totals are not right` (probes 1.000). Tense variants (`total was wrong`) were not added. A no-op on the second edit plus the first fix scores 0.188.
+- Verification after these edits: 66 model-free tests pass, `ruff` clean, all 50 golds 1.000. `ho-suggest-edits-06` untouched.
