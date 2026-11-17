@@ -1,0 +1,4 @@
+2e010fe595a79f4fa27a6ed932b0347c139e5f1258956126f3cef1858cd3e6da  heldout.v1.jsonl
+frozen: 2026-11-17
+tasks: 50
+rule: never used for training; any change means a new file (v2) and a new baseline

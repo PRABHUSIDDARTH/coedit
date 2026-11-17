@@ -20,8 +20,9 @@ uv run --offline --no-project --with pytest python -m pytest -q scripts/doclm/te
 ## Measuring a real model (needs a running OpenAI-compatible server, e.g. Ollama)
 
 ```bash
-# Freeze the held-out set once it has exactly 50 hand-written records (split="heldout"):
-python3 scripts/doclm/eval_runner.py --freeze scripts/doclm/data/heldout.jsonl
+# The held-out set is already frozen: scripts/doclm/data/heldout.v1.jsonl (sha256 in docs/doclm/HELDOUT_HASH.txt).
+# It was created by the one-shot `python3 scripts/doclm/freeze_heldout.py` from heldout.draft.jsonl. Never rerun it
+# or edit v1; a change means heldout.v2.jsonl and a new baseline.
 
 # BASELINE FIRST, before any training:
 python3 scripts/doclm/eval_runner.py --data scripts/doclm/data/heldout.jsonl \

@@ -26,17 +26,15 @@ nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv       # expect
 ```
 If any of these fail, jump to **Troubleshooting** before continuing.
 
-## 1. Commit the two uncommitted docLM files FIRST
+## 1. Check the draft is committed (already done for v1)
 
-They are the final scorer/held-out edits. Freezing copies the draft, so the draft you freeze must be the committed one.
-Skim what you are committing, then commit:
+The final scorer and held-out edits were merged to `main` (PRs #5 to #8) before the freeze, so there are no uncommitted
+docLM files to commit. Freezing copies the draft, so the draft you freeze must be the committed one. Check:
 
 ```bash
-git diff --stat
-git add docs/doclm/SCORING.md scripts/doclm/data/heldout.draft.jsonl
-git commit -m "doclm: final held-out draft and SCORING.md before freeze"
-git status --short                      # expect empty
+git status --short                      # expect only the owner's untracked docs (docs/RAG_PLAN.md, docs/SECURITY_GOVERNANCE.md)
 ```
+The v1 freeze has been run (step 2 below, sha256 `2e010fe5...e6da`); do not run it again.
 
 ## 2. Freeze (one-shot, cannot be undone)
 
