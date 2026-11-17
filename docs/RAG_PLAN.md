@@ -4,6 +4,8 @@
 Everything marked **[UNVERIFIED]** is from memory or inference and must be checked before it is relied on. Facts about this repo were read
 from the code and are cited by file.
 
+Security framework: the controls in this plan are mapped in `docs/SECURITY_GOVERNANCE.md` §1 to the **OWASP Top 10 for LLM Applications 2026** (the document prints the date August 4th, 2026), official page read: https://genai.owasp.org/resource/owasp-genai-llm-top-10-2026/.
+
 Goal: `POST /api/workspaces/{id}/ask` answers a question from the docs and sheets the caller may read, with citations,
 using the existing council/provider adapters, without leaking anything across workspaces or past a revoked membership.
 

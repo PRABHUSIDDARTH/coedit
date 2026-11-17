@@ -251,8 +251,8 @@ against the running stack (it creates `smoke-*@example.com` users).
 ### Content-Security-Policy
 
 The web app sends a CSP (script/style `'unsafe-inline'` for Next's inline scripts, the sync WebSocket on `:1234`,
-`esm.sh` for Excalidraw fonts, `frame-ancestors 'none'`; details in `docs/ARCHITECTURE.md`). It has not been
-exercised in a browser yet (see `docs/BROWSER_CHECK.md`). **If a page breaks under CSP, set `CSP_MODE=report-only`
+`esm.sh` for Excalidraw fonts, `frame-ancestors 'none'`; details in `docs/ARCHITECTURE.md`). It has been
+checked in a browser on the canvas page only, with no console or CSP errors (see `docs/CANVAS_BROWSER_CHECK.md`); the checklist for the other pages (`docs/BROWSER_CHECK.md`) has not been run. **If a page breaks under CSP, set `CSP_MODE=report-only`
 in `.env`, rebuild web, and open the browser console**: it lists each would-be violation without blocking anything.
 Fix with the smallest change in `frontend/src/lib/security-headers.ts`, then set it back to `enforce`.
 
