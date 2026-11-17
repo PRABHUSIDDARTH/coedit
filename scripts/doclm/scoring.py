@@ -130,6 +130,7 @@ HARD = frozenset(
         "in_range",
         "critical",
         "no_real_change",
+        "must_not_critical",
     }
 )
 CONTENT = frozenset(
@@ -169,7 +170,9 @@ class Score:
         form = [
             v
             for k, v in self.items.items()
-            if k not in CONTENT and k not in PENALTIES and k not in ("critical", "no_real_change")
+            if k not in CONTENT
+            and k not in PENALTIES
+            and k not in ("critical", "no_real_change", "must_not_critical")
         ]
         total = sum(form) / len(form) if form else 1.0
         for k in CONTENT:
@@ -189,7 +192,7 @@ class Score:
         """Same score, but ignoring the `critical` and `no_real_change` gates (every other hard
         item still zeroes it). Diagnostic only: ungated - total > 0 means a gate fired, so a
         false zero can be told apart from a genuinely wrong answer. Never used for gating."""
-        return self._total(HARD - {"critical", "no_real_change"})
+        return self._total(HARD - {"critical", "no_real_change", "must_not_critical"})
 
 
 def _complete(text: str) -> float:
@@ -465,6 +468,12 @@ def _phrases(text: str, ex: Example) -> dict[str, float]:
         ok_c = all(any(contains_phrase(text, a) for a in _alts(e)) for e in crit)
         ok_r = all(_collapse(r) in flat for r in raw)
         out["critical"] = float(ok_c and ok_r)
+    # phrases that must NOT appear in the reply, else the example is 0
+    forbid = ex.checks.get("must_not_critical", [])
+    if forbid:
+        out["must_not_critical"] = float(
+            not any(contains_phrase(text, a) for e in forbid for a in _alts(e))
+        )
     if exc:
         out["must_not_include"] = 1.0 - sum(contains_phrase(text, p) for p in exc) / len(exc)
     return out
