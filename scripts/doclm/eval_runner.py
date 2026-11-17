@@ -14,6 +14,9 @@ the only thing ever shown). HTTP failures report the status code only, never the
   # freeze the held-out file (writes <file>.sha256; later runs refuse a changed file):
   python3 scripts/doclm/eval_runner.py --freeze scripts/doclm/data/heldout.jsonl
 
+  # a real run also saves every raw reply, flushed per task, never overwriting:
+  #   <out-dir>/<label>.outputs.jsonl   (--outputs-dir to move it, --no-save-outputs to skip)
+
   # base vs docLM table:
   python3 scripts/doclm/eval_runner.py --compare results/base.json results/doclm.json
 """
@@ -26,6 +29,7 @@ import json
 import os
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -87,8 +91,12 @@ class Endpoint:
         # Read once; never stored anywhere that is printed.
         self._key = os.environ.get(key_env) if key_env else None
 
-    def chat(self, messages: list[dict[str, str]], max_tokens: int) -> tuple[str, str | None]:
-        """Return (reply_text, error_label). error_label never contains a response body."""
+    def chat_detailed(
+        self, messages: list[dict[str, str]], max_tokens: int
+    ) -> tuple[str, str | None, dict[str, Any]]:
+        """Return (reply_text, error_label, meta). error_label never contains a response body.
+        meta: finish_reason, prompt_tokens, completion_tokens (None when the server omits them)
+        and latency_s (wall time of the request, also on failure)."""
         body = json.dumps(
             {
                 "model": self.model,
@@ -101,16 +109,45 @@ class Endpoint:
         if self._key:
             headers["Authorization"] = f"Bearer {self._key}"
         req = urllib.request.Request(self.url, data=body, headers=headers, method="POST")  # noqa: S310
+        meta: dict[str, Any] = {
+            "finish_reason": None,
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "latency_s": None,
+        }
+        t0 = time.perf_counter()
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as r:  # noqa: S310
                 data = json.loads(r.read())
-            return str(data["choices"][0]["message"]["content"] or ""), None
+            reply = str(data["choices"][0]["message"]["content"] or "")
+            meta["latency_s"] = round(time.perf_counter() - t0, 3)
+            meta["finish_reason"] = _opt_str(data["choices"][0].get("finish_reason"))
+            usage = data.get("usage")
+            if isinstance(usage, dict):
+                meta["prompt_tokens"] = _opt_int(usage.get("prompt_tokens"))
+                meta["completion_tokens"] = _opt_int(usage.get("completion_tokens"))
+            return reply, None, meta
         except urllib.error.HTTPError as e:
-            return "", f"http_{e.code}"
+            err = f"http_{e.code}"
         except (urllib.error.URLError, TimeoutError, OSError):
-            return "", "unreachable"
+            err = "unreachable"
         except (KeyError, IndexError, TypeError, json.JSONDecodeError):
-            return "", "bad_response_shape"
+            err = "bad_response_shape"
+        meta["latency_s"] = round(time.perf_counter() - t0, 3)
+        return "", err, meta
+
+    def chat(self, messages: list[dict[str, str]], max_tokens: int) -> tuple[str, str | None]:
+        """Return (reply_text, error_label). error_label never contains a response body."""
+        reply, err, _meta = self.chat_detailed(messages, max_tokens)
+        return reply, err
+
+
+def _opt_str(v: Any) -> str | None:
+    return v if isinstance(v, str) else None
+
+
+def _opt_int(v: Any) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
 
 
 # ---------------------------------------------------------------- stub server (--dry-run)
@@ -222,11 +259,51 @@ def run(args: argparse.Namespace) -> int:
             print("error: --label is required (e.g. base, doclm)", file=sys.stderr)
             return 2
     ep = Endpoint(base_url, model, key_env, args.timeout)
+    out_dir = Path(args.out_dir)
+    # Raw replies are saved for later analysis. Not for --dry-run (stub text, repeatable runs) or
+    # when --no-save-outputs is given. The target is checked BEFORE any request is sent.
+    outputs_path = None
+    if not args.dry_run and not args.no_save_outputs:
+        outputs_path = Path(args.outputs_dir or out_dir) / f"{label}.outputs.jsonl"
+        if outputs_path.exists():
+            print(
+                f"error: refusing to overwrite existing {outputs_path}: it holds raw replies of an "
+                "earlier run. Move or rename it, or use another --label / --outputs-dir.",
+                file=sys.stderr,
+            )
+            return 2
+    data_sha = sha256_file(data)
+    settings = {
+        "model": model,
+        "temperature": 0,
+        "max_tokens": args.max_tokens,
+        "timeout_s": args.timeout,
+    }
     scores: list[Score] = []
     errors: dict[str, int] = {}
+    out_fh = None
     try:
-        for ex in exs:
-            reply, err = ep.chat(build_messages(ex), args.max_tokens)
+        if outputs_path is not None:
+            outputs_path.parent.mkdir(parents=True, exist_ok=True)
+            out_fh = outputs_path.open("x", encoding="utf-8")  # "x": never overwrite
+        for i, ex in enumerate(exs):
+            reply, err, meta = ep.chat_detailed(build_messages(ex), args.max_tokens)
+            if out_fh is not None:
+                # written BEFORE scoring and flushed, so a crash keeps every reply received so far
+                rec = {
+                    "index": i,
+                    "id": ex.id,
+                    "task": ex.task,
+                    "label": label,
+                    "data_sha256": data_sha,
+                    "reply": reply,
+                    "error": err,
+                    **meta,
+                    "settings": settings,
+                }
+                out_fh.write(json.dumps(rec) + "\n")
+                out_fh.flush()
+                os.fsync(out_fh.fileno())
             if err:
                 errors[err] = errors.get(err, 0) + 1
             s = score_example(ex, reply)
@@ -234,18 +311,19 @@ def run(args: argparse.Namespace) -> int:
                 s.note = err
             scores.append(s)
     finally:
+        if out_fh is not None:
+            out_fh.close()
         if srv:
             srv.shutdown()
             srv.server_close()
     summary = summarize_scores(scores)
-    out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     result = {
         "label": label,
         "model": model,
         "dry_run": bool(args.dry_run),
         "data": data.name,
-        "data_sha256": sha256_file(data),
+        "data_sha256": data_sha,
         "errors": errors,
         "summary": summary,
         "gated_zero_ids": [s.id for s in scores if s.total == 0.0 < s.ungated],
@@ -274,6 +352,8 @@ def run(args: argparse.Namespace) -> int:
     (out_dir / f"{label}.md").write_text(table, encoding="utf-8")
     print(table)
     print(f"wrote {out_dir / (label + '.md')} and {out_dir / (label + '.json')}")
+    if outputs_path is not None:
+        print(f"wrote raw replies to {outputs_path}")
     return 0 if not errors else 1
 
 
@@ -285,6 +365,16 @@ def main() -> int:
     ap.add_argument("--api-key-env", default=None, help="NAME of the env var holding the key")
     ap.add_argument("--label", help="name for the results files, e.g. base or doclm")
     ap.add_argument("--out-dir", default=str(HERE / "results"))
+    ap.add_argument(
+        "--outputs-dir",
+        default=None,
+        help="where to write <label>.outputs.jsonl (raw replies); default: --out-dir",
+    )
+    ap.add_argument(
+        "--no-save-outputs",
+        action="store_true",
+        help="do not write <label>.outputs.jsonl (--dry-run never writes it)",
+    )
     ap.add_argument("--max-tokens", type=int, default=1024)
     ap.add_argument("--timeout", type=float, default=120.0)
     ap.add_argument("--dry-run", action="store_true", help="use a local stub server, no model")

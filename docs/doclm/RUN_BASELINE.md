@@ -127,6 +127,10 @@ wrote .../scripts/doclm/results/base.md and .../scripts/doclm/results/base.json
 eval exit code: 0
 ```
 
+Raw replies: the run also writes every reply to `scripts/doclm/results/base.outputs.jsonl`, one line per task, flushed as it goes (so a crash keeps the partial file).
+It never overwrites: a rerun with the same label stops with an error until you move or delete that file. `results/` is gitignored, so **copy `base.json`, `base.md`
+and `base.outputs.jsonl` to `~/doclm-results-backup/base-<date>/` after the run** (and before deleting `base.*` for a rerun). `--no-save-outputs` turns it off; `--dry-run` never writes it.
+
 ### Success or failure
 Success needs ALL of:
 - exit code `0`, no `Request errors (counts by status label)` line, no `DRY RUN` note;
