@@ -42,10 +42,10 @@ Still open: see §12.
 
 ## 1. Storage and search: slice 1 is plain Postgres plus NumPy (D1, D2)
 
-**What exists:** `postgres:16-alpine` (docker-compose.yml). Migration `0001` only creates `citext`. The latest migration is `0008`.
+**What exists:** `postgres:16-alpine` (docker-compose.yml). Migration `0001` only creates `citext`. The latest migration is `0009` (`0009_canvas.py`).
 **What slice 1 adds:** ordinary tables only. **No extension, no image change, no ANN index, no change to the compose db service.**
 
-**Migration `0009_rag_index.py`** (Alembic, same style as the others; reversible):
+**Migration `0010_rag_index.py`** (Alembic, same style as the others; reversible):
 ```
 UNIQUE (id, workspace_id) ON files              -- so chunks can reference both
 CREATE TABLE file_text, file_index, chunks, ask_requests, rag_settings
@@ -245,7 +245,7 @@ Controls, in layers (none sufficient alone):
    for the council; keep it true for `/ask`). **Any future tool use needs its own review.**
 3. **Exfiltration through rendering:** the answer is rendered as plain text or sanitised markdown with **no remote images, no auto-loaded links**.
    The CSP already has `img-src 'self' data: blob:` and `connect-src` limited to self and the sync socket, which should block image beacons;
-   **verify in a browser** (the CSP has never been run in one: docs/BROWSER_CHECK.md). Links in answers are shown as text unless the URL appears in a cited source.
+   **verify in a browser** (the CSP was checked in a browser only on the canvas page, with no console or CSP errors: README, `docs/CANVAS_BROWSER_CHECK.md`; `/ask` rendering has not been checked). Links in answers are shown as text unless the URL appears in a cited source.
 4. **Output filter:** strip or flag URLs and e-mail addresses in the answer that do not occur in the retrieved chunks.
 5. **Scope is fixed server-side** (§4.11), so an injected instruction cannot widen the search to other workspaces or users.
 6. **Heuristic flags:** chunks matching injection patterns (role tags, "ignore previous", "system prompt", base64 blobs, very long URLs) get a flag, are
@@ -334,7 +334,7 @@ Cost/limits: per-ask cap → `capped`; unknown price fails closed; rate limit 42
 
 Conventions: every new mutating route (slice 1: `POST /workspaces/{id}/ask`, `POST /workspaces/{id}/rag/reindex`, `PUT /workspaces/{id}/rag/settings`; target design adds `POST .../ask/prepare` and `POST .../ask/{prepare_id}/send`) gets a row in `MUTATING` in
 `test_permissions.py` (viewer allowed / non-member 404 for the ask routes; owner-only for reindex and settings), or `test_every_mutating_route_is_listed` fails.
-Migration 0009 up and down (plain tables; no extension). Frontend: renders answers as text, citation chips, error and capped states (vitest).
+Migration 0010 up and down (plain tables; no extension). Frontend: renders answers as text, citation chips, error and capped states (vitest).
 
 Quality (not security): a hand-written set of about 30 questions with expected source files, to measure recall@k for each embedding candidate
 and to compare hybrid vs vector-only. Answer quality against real providers is **unmeasured**.
@@ -368,13 +368,13 @@ check for the third-party embedding opt-in, which sits inside Q4, is a low-prior
 - NumPy and the local embedder runner: package choice, licences, image size, speed on this host. Real latency of exact search at 10k chunks.
 - Whether a Node-side XmlFragment walk covers every node type the TipTap schema can produce (marks, nodes added later), and `y-prosemirror` as an alternative.
 - pgvector items (deferred): image availability, trusted-extension status, iterative scans, and whether alpine to Debian changes collation for this database.
-- Prices, and the 4 chars/token estimate. Whether the CSP blocks image beacons in a real browser (the CSP has not been run in one).
+- Prices, and the 4 chars/token estimate. Whether the CSP blocks image beacons in a real browser (not recorded as tested; the CSP was checked in a browser only on the canvas page, with no errors).
 - Frontend anchors for deep links. That no other code path sets `deleted_at` (only two were found by grep).
 - Effectiveness of the prompt-injection controls against real models (no real provider has been called).
 
 ## 14. Suggested order of work (when approved)
 
-0. **First: the local-vs-hosted seat classification test via `netguard` (§11); the egress toggle depends on it.** 1. Migration `0009` (plain tables, composite FK). 2. **Leakage test + repository function with the permission join** (before anything calls a model).
+0. **First: the local-vs-hosted seat classification test via `netguard` (§11); the egress toggle depends on it.** 1. Migration `0010` (plain tables, composite FK). 2. **Leakage test + repository function with the permission join** (before anything calls a model).
 3. Sidecar extraction into `file_text` with golden tests. 4. Chunker + indexer worker with debounce and caps. 5. Embedding interface + local embedder + fake embedder.
 6. NumPy exact search + hybrid. 7. `/ask` with the fake adapter end to end. 8. Citations, output filters, PII checks. 9. Caps and audit. 10. Frontend.
 11. Browser checklist and a quality set. Later: pgvector rehearsal (D2).
