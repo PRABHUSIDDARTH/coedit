@@ -1,6 +1,6 @@
 # docLM plan
 
-Status: planning and scaffolding only. Nothing was trained, downloaded or sent to any API.
+Status: planning and scaffolding only. Nothing was trained or sent to any hosted API; the base model Phi-4-mini-instruct was downloaded (to ~/doclm-models/) and the baseline was run locally.
 Anything marked **(unverified)** is from memory or estimation, not checked in this session.
 
 ## 0. Measured hardware (read-only commands, 2026-11-16)
@@ -81,7 +81,7 @@ Target for a first run: ~150 hand-written + ~1,000 filtered synthetic, all with 
 ## 6. Evaluation
 
 - **Held-out:** 50 tasks (9 critique, 9 rewrite, 8 agents_md, 8 architecture_md, 8 summarize, 8 suggest_edits), each with a reference, **drafted by Claude agents and reviewed only by Claude agents; no human review yet**. Frozen as `scripts/doclm/data/heldout.v1.jsonl` (sha256 `2e010fe595a79f4fa27a6ed932b0347c139e5f1258956126f3cef1858cd3e6da`) with `eval_runner.py --freeze`; the runner refuses a changed file. `check_no_overlap` blocks id or input overlap with training data.
-- **Scoring (programmatic, `scoring.py`):** JSON validity (strict: no code fences or prose), rubric-id match and range, closeness to human scores, section coverage, length limits, verbatim-grounded edits, required/forbidden phrases. These are structural checks, **not writing quality**; also hand-review 10 outputs per model.
+- **Scoring (programmatic, `scoring.py`):** JSON validity (strict: no code fences or prose), rubric-id match and range, closeness to the critique reference scores (drafted by Claude agents, with no human review), section coverage, length limits, verbatim-grounded edits, required/forbidden phrases. These are structural checks, **not writing quality**; also hand-review 10 outputs per model.
 - **Baseline first:** run the untuned base through the same endpoint (Ollama or any OpenAI-compatible server) **before any training**; save `results/base.json`.
 - **Report:** `--compare base.json doclm.json` prints a per-task table (n, base, docLM, delta, JSON-valid rate). With 8-9 items per task, small deltas are noise.
 
