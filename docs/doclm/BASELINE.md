@@ -131,6 +131,20 @@ Produced by hand from the per-task verdicts above, by a Claude agent; no human h
 
 Pooled over all 50 tasks (also manual, a plain average of task scores, not a scorer output): lower 29.862 / 50 = 0.597; upper (29.862 + 5.000) / 50 = 34.862 / 50 = 0.697. Sums use unrounded scores, so the displayed sums can differ from the means in the third decimal. The ranges are wide for agents_md, summarize and rewrite, so a later docLM comparison should read gated and adjudicated numbers side by side, not the gated mean alone. suggest_edits and critique have no gated zeros, so their range is a point (see the open scorer limit above for suggest_edits).
 
+## Reproducibility
+
+After `eval_runner.py` was changed to save raw replies, the baseline was rerun once more under the label `base-rerun`, on the same GPU (RTX 5070) and the same software stack (torch 2.15.0+cu132), against the same frozen `heldout.v1.jsonl` (sha256 `2e010fe595a79f4fa27a6ed932b0347c139e5f1258956126f3cef1858cd3e6da`), with the same fixed settings. The numbers above are from the first run (`base`).
+
+- **0 of 50 tasks differed** from the first run in per-item scores or totals; the per-task-type summary is identical. No request errors.
+- All 50 `finish_reason` values were `stop` (no reply hit the 1024-token cap).
+- The raw replies are saved in `base-rerun.outputs.jsonl` (one line per task). It and `base-rerun.json` / `base-rerun.md` were copied to `~/doclm-results-backup/base-2026-11-17/` (outside the repo; `results/` is gitignored):
+  - `base-rerun.json` sha256 `302ca9d68f4f65415f967c7cff42893a1ea5eb40c42fdac37b08abc6e1fbe47e`
+  - `base-rerun.md` sha256 `e8a5281913794b4c24b5c84bed000eebde4d06ba2b888ea239092d14f345f9f3`
+  - `base-rerun.outputs.jsonl` sha256 `b442b9275e88ac8baa225a9d74d2b039c0d0788ce21ac5f1329d6848b73879c3`
+- The saved reply text of the 21 tasks regenerated for the analysis above is identical to the rerun's saved replies (21 of 21).
+
+This applies to this GPU and software stack only. Greedy decoding is not guaranteed to give identical text on a different GPU, driver, torch/CUDA build or batch setting; a docLM comparison should be run on this same setup.
+
 ## Caveats
 
 The scorer checks structure and required content, not writing quality; read some outputs yourself. Single run, greedy. Regenerated, not retained, outputs (see above). All verdicts are model-written and not human-reviewed.
