@@ -1,0 +1,53 @@
+# SECURITY_GOVERNANCE (outline)
+
+**Plan: nothing here is implemented.** This is an outline for the planned RAG `/ask` feature (`docs/RAG_PLAN.md`); the council is the only LLM feature that exists today.
+Status words are honest about *today*: **Exists** (in the repo and tested), **Partial** (council only, or built but not run in a browser),
+**Planned** (in RAG_PLAN, no code), **Open** (no design or decision yet). No external audit, legal review or real-provider test has been done.
+
+## 0. Decisions this outline assumes (recorded in RAG_PLAN.md)
+Slice 1 stores embeddings as float arrays in an ordinary Postgres table and searches them exactly with NumPy inside one workspace (no pgvector, no Postgres image
+change; pgvector later, via a dump/restore/reindex rehearsal). Embeddings are local by default; third-party only as an explicit per-workspace opt-in. The asker's own
+provider key pays. Yjs text is extracted in the sync sidecar. Docs and sheets only. PII checks on the question and the answer. Question text is not stored by default.
+Spend caps: $0.05 per ask, $1 per user per day, $5 per workspace per day. **Answer generation egress (decided, RAG_PLAN D10):** an owner-only workspace toggle "Allow answers via hosted providers", off by default. Off: only a local seat works (needs `COUNCIL_ALLOW_LOCAL_PROVIDERS=1`, self-hosted only, never on a hosted deployment). On: slice 1 shows the provider and chunk count with each hosted answer (disclosure after the call); showing and confirming before sending is the target design (prepare/send), not in slice 1. First thing slice 1 must test: local-vs-hosted seat classification via `netguard`. Open: the local embedder model, pending licence cards (Q2); the chunk-level PII check is a low-priority proposal.
+
+## 1. OWASP LLM Top 10 mapping
+
+**Framework: OWASP LLM Top 10, 2025 edition.** Source: https://genai.owasp.org/llm-top-10/ (the URL path is from memory and was not fetched; the edition and the item names
+below are **UNVERIFIED** until compared with the page).
+**Check genai.owasp.org for a newer edition before relying on this mapping.**
+
+| # | Item | Control (what we do) | Test | Status |
+|---|---|---|---|---|
+| LLM01 | Prompt Injection (direct and indirect) | Untrusted text only inside `wrap()` blocks with tag look-alikes defused; fixed system prompt; no tools; fixed server-side retrieval scope; output URL filter; injection-pattern flags (RAG_PLAN §8) | council: `test_council.py` wrap/defuse tests; RAG: planted-injection corpus with a prompt-capturing fake adapter | council **Exists**; `/ask` **Planned**; effect on real models **unmeasured** |
+| LLM02 | Sensitive Information Disclosure | Membership join at query time, composite FK `(file_id, workspace_id)`, re-auth of citations, no cross-user cache, PII/secret checks on the question and the answer (a chunk-level check for the third-party embedding opt-in is a low-priority proposal), question text not stored by default, local embeddings by default, owner-only "Allow answers via hosted providers" toggle (off by default; local seat only when off) with provider and chunk count shown with each hosted answer in slice 1 (confirmation before sending is the target design only), audit of egress, key redaction in logs, provider keys never returned (RAG_PLAN §4, §5, §9) | **Cross-workspace leakage test first**; removed/demoted/soft-deleted cases; PII/secret detector tests; log-capture assertions; egress-toggle tests (first: local-vs-hosted classification via `netguard`; off = hosted adapter never called; reported provider and chunk count match the prompt; owner-only; prepare/send tests are target design) | key storage/redaction **Exists**; RAG controls **Planned** |
+| LLM03 | Supply Chain | Lockfiles, `make licences` allowlist, new dependency needs a README note (AGENTS.md); new packages planned: NumPy and a local embedder runner; pin and verify embedding model weights and **check every licence on the model card (all UNVERIFIED today)**; `pnpm audit` / `npm audit` | `make licences`, `make secrets-check`, audit output in the PR | Partial: frontend audit has 13 advisories (7 high), not upgraded; backend not audited; embedding model and runner **Open**, licences **UNVERIFIED** |
+| LLM04 | Data and Model Poisoning | Editors can write text that is indexed: per-file/chunk caps, provenance in citations, injection flags, re-index is derived and repeatable; no fine-tuning on user data | cap tests; poisoned-doc corpus; reindex-from-scratch test | **Planned**. docLM training data hygiene is separate (held-out never trained on, overlap check): **Exists** for docLM scripts |
+| LLM05 | Improper Output Handling | Answer rendered as text/sanitised markdown, no remote images or auto-links, CSP `img-src 'self' data: blob:`; server-built citations; council file output restricted to an allowlist of names and downloads served as attachment + nosniff | frontend render tests; beacon-in-answer test; browser check of the CSP | council/downloads **Exists**; CSP **not verified in a browser**; `/ask` rendering **Planned** |
+| LLM06 | Excessive Agency | Models get **no tools**, no network, no writes; council writes only three allowlisted file names; any future tool use requires a new review | test that the adapter call carries no tools; allowlist parser tests | **Exists** (council); `/ask` **Planned** (same constraint) |
+| LLM07 | System Prompt Leakage | Treat the system prompt as non-secret; no keys, ids or policy secrets in prompts; secrets live only in env/DB | test that prompts contain no key-shaped text; output secret redaction | **Planned**; prompts contain nothing secret today (council prompts reviewed by reading) |
+| LLM08 | Vector and Embedding Weaknesses | Slice 1: `real[]` embeddings in a plain table, exact NumPy search over one workspace's permitted chunks only (no ANN, so no post-filter surprises), composite FK, optional RLS (open), embeddings and extracted text are derived data purged with the file, embed model id and dimension stored per row and never mixed, no vectors shared across workspaces, embeddings treated as sensitive (they can leak content); hard chunk cap bounds memory | leakage test at repository level; NumPy-vs-brute-force test; purge-on-delete tests; model/dimension mismatch test | **Planned**; RLS **Open**; pgvector deferred (any later move needs its own review) |
+| LLM09 | Misinformation | Answer only from retrieved sources, citations validated server-side, "can't find it" path, uncited-answer policy, UI says answers are drafts; council output is reviewed by the owner | citation validation tests; fake adapter that cites outside the set; retrieval-quality set | **Planned**; real-model answer quality **unmeasured**; council "better than one model" is a hypothesis (README) |
+| LLM10 | Unbounded Consumption | Per-ask ($0.05), per-user ($1/day) and per-workspace ($5/day) caps (decided), durable daily $ cap, NumPy search semaphore and 10k chunk cap, sidecar extraction size cap, rate limit + concurrency semaphore, index spend cap, fail-closed on unknown price, kill switch `RAG_ENABLED=0`, body size limit, sync size/connection caps | cap, 429, restart-survival and fail-closed tests | council caps **Exists**; login rate limit **Exists** (in memory); `/ask` limits **Planned**; no per-user council concurrency limit today (README) |
+
+## 2. Governance outline (to fill in; owners and dates are not decided)
+
+| Area | Content | Status |
+|---|---|---|
+| Purpose and scope | What `/ask` is for, what it is not (no decisions about people, no legal/medical advice) | Open |
+| Data classification | Indexed: docs and sheets only (decided). May leave the host: embeddings only with the per-workspace third-party embedding opt-in (decided); answers only via a local seat, or via hosted providers when an owner enabled "Allow answers via hosted providers" (decided, D10). Never indexed: blobs, council outputs, keys, `.env`, audit rows | Partial (scope decided), **Planned** |
+| Provider register | Each LLM/embedding provider and model: purpose, data sent, licence/terms link (**embedding model licences UNVERIFIED until checked on each model card**), region, retention terms, owner. Today: Anthropic, OpenAI, Google adapters, OpenAI-compatible seats (Groq, NIM, Ollama): **none run against a real API**. No local embedding model has been chosen | Open |
+| Access control | Workspace roles only; viewer or above may ask (decided, Q3); the asker's own key pays (decided); owner-only reindex and owner-only toggles (hosted answers, third-party embeddings); admin console is a mock-data preview and is **not** a control | Partial (roles **Exists**); the rest **Planned** |
+| Retention and erasure | Chunks, `file_index` and `file_text` follow the file. `ask_requests` keeps ids, hashes and usage; **question text is not stored by default** (decided); an opt-in to store it, and its retention, is open (RAG_PLAN Q5); erasure on request | Partial design, **Planned**; nothing implemented |
+| Logging and audit | Logged: ids, hashes, usage, flags. Never logged: question text (default, decided), keys. Who may read audit rows: open | **Planned** |
+| Incident response | Kill switch, key rotation (the DB password rotation of 2026-11-16 is a precedent), disabling an adapter, notifying affected workspaces; contact owner | Open |
+| Change management | New dependency = README note; new mutating route = permission-table row; new model/provider = register entry + price + licence check; prompt changes reviewed | Partial (conventions in AGENTS.md **Exist**) |
+| Testing and assurance | Leakage test first, injection corpus, cap tests, browser checklist before merge (`docs/BROWSER_CHECK.md`, **not yet run**), periodic re-run of `make secrets-check`, `make lint`, `make test` | Partial |
+| Review cadence | Re-review when a provider, model, embedding model, prompt or chunker version changes, and at least quarterly | Open |
+| Known gaps register | Mirror of README "Known limitations" plus RAG residual risks (injection can still mislead; regex PII misses names; formulas not computed; no streaming) | Partial |
+
+## 3. Evidence still missing before this can be called assurance
+- CSP and rendering behaviour in a real browser (the extension could not reach the app in two attempts).
+- Any run against a real LLM or embedding provider (prices, refusals, error shapes, injection resistance).
+- pgvector image rehearsal on a copy of the owner's database.
+- Independent review of the retrieval query and the leakage test (mutation-checked by the author only).
+- GitGuardian PR check still failing on the old default DB password in history (rotated, not rewritten).
