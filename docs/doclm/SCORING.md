@@ -144,6 +144,10 @@ word adds nothing. No normalisation is applied before counting.
   The audit uses the normaliser: an alternative that differs from the original only by a plural (`totals are wrong` vs
   `total are wrong` in `ho-suggest-edits-05`) has the same tokens and cannot be added.
 - Known weakness: a harmless extra improvement outside the expected spans is counted as spurious.
+- **`ho-suggest-edits-06` tests restraint, not editing skill.** It marks its single edit as optional by design
+  (`optional_edits: [0]`, a stylistic change to text that is already acceptable). An empty answer scores 1.000 and a
+  no-op change scores 0.750 (`no_real_change` does not apply to it). Read its score as "did not over-edit acceptable
+  text", not as editing ability.
 
 ## Invented content (`checks.must_say_unknown`, optional)
 
