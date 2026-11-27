@@ -53,6 +53,10 @@ docker compose ps                # wait for all four services to be healthy
 
 Open **http://localhost:5173**. `make seed` creates demo accounts and a workspace; `make test`, `make lint` and `make secrets-check` run the checks. The full guide and a demo outline are in `PROJECT_STATUS.md` and `docs/DEMO_SCRIPT.md`.
 
+## Website
+
+`website/` is the static product page, deployed separately from the app. It uses two extra dependencies that are not part of the app stack: three.js (bundled into `website/assets/hero.js` for the 3D logo) and esbuild (to build that bundle). See `website/README.md`.
+
 ## Honest status
 
 - **Verified in a browser:** Canvas (persists after reload, read-only for viewers, exports open, no console or CSP errors, stale-save conflicts). Docs and sheets were checked by hand in Chrome and with a scripted second user.
