@@ -3,6 +3,7 @@
 <title>Coedit: docs, sheets and a canvas you host yourself</title>
 <meta name="description" content="Documents, spreadsheets and drawings in one workspace that you run yourself. Free and GPL-3.0.">
 <meta property="og:type" content="website"><meta property="og:title" content="Coedit"><meta property="og:description" content="Documents, spreadsheets and drawings in one workspace that you run yourself.">
+<meta property="og:url" content="https://coedit-website.vercel.app/"><meta property="og:image" content="https://coedit-website.vercel.app/assets/og.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#FAFBFC"><link rel="icon" type="image/svg+xml" href="assets/favicon.svg"><style>@font-face{font-family:'Plex';font-weight:400;font-display:swap;src:url(assets/plex-sans-latin-400.woff2) format('woff2')}@font-face{font-family:'Plex';font-weight:700;font-display:swap;src:url(assets/plex-sans-latin-700.woff2) format('woff2')}@font-face{font-family:'PlexM';font-weight:400;font-display:swap;src:url(assets/plex-mono-latin-400.woff2) format('woff2')}
 :root{--bg:#FAFBFC;--ink:#0B0E13;--mute:#56606D;--rule:#D9DEE5;--gap:clamp(80px,12vw,170px)}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -108,9 +109,13 @@ blockquote{grid-column:2/11;font-size:clamp(32px,3.6vw,52px);line-height:1.2;let
  .buy>*{grid-column:1/13!important;text-align:left!important;justify-content:flex-start!important}
  .macro img{height:300px;object-fit:cover}
 }
+.pf{display:inline-block;color:var(--ink);text-decoration:none;font-size:14px;line-height:1.2;padding:9px 14px;border-radius:8px;box-shadow:inset 0 0 0 1px var(--mute);white-space:nowrap}
+.pf-top{position:absolute;top:22px;left:50%;transform:translateX(-50%);z-index:6}
+@media (max-width:760px){.pf-top{top:62px;font-size:12px;padding:7px 11px}}
 </style></head><body>
 <main>
 <section class="hero">
+ <a class="pf pf-top" href="https://prabhusiddarth.dev">View portfolio</a>
  <h1 class="hero-title" aria-label="Coedit"><svg viewBox="0 -76 300 98" aria-hidden="true"><text x="0" y="0" textLength="300" lengthAdjust="spacingAndGlyphs">Coedit</text></svg></h1>
  <canvas class="glass" aria-hidden="true"></canvas>
  <div class="mark"><img src="assets/coedit-symbol.svg" width="256" height="256" alt="Coedit logo, two interlocking arcs"></div>
@@ -158,7 +163,7 @@ blockquote{grid-column:2/11;font-size:clamp(32px,3.6vw,52px);line-height:1.2;let
 
 <footer style="margin-top:var(--gap)">
  <div class="grid buy"><span class="price">Free, GPL-3.0</span><div class="swatches" role="group" aria-label="Finish"><button class="sw" data-f="dark" aria-pressed="false" aria-label="Smoked glass, dark screenshot"></button><button class="sw" data-f="light" aria-pressed="true" aria-label="Clear glass, light screenshot"></button></div><div class="act"><a class="btn" href="https://github.com/PRABHUSIDDARTH/coedit" target="_blank" rel="noopener">Get the code</a></div></div>
- <p class="back"><a href="https://prabhusiddarth.dev">Back to Prabhu’s portfolio</a></p>
+ <p class="back"><a class="pf" href="https://prabhusiddarth.dev">View portfolio</a></p>
  <div class="wordmark" role="img" aria-label="Coedit"><svg viewBox="0 -76 300 98" aria-hidden="true"><text x="0" y="0" textLength="300" lengthAdjust="spacingAndGlyphs">Coedit</text></svg></div>
 </footer>
 <script>
